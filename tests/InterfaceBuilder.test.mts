@@ -464,12 +464,25 @@ windows:
   // ── Border & background ───────────────────────────────────────────────────────
 
   describe('window options', () => {
-    it('applies background color', () => {
+    it('applies background from named style', () => {
+      const yaml = `
+styles:
+  - name: my-bg
+    background: 235
+windows:
+  - id: w
+    size: { width: 10, height: 3 }
+    background: my-bg
+`;
+      expect(() => builder.build(yaml, screen)).not.toThrow();
+    });
+
+    it('applies background from built-in style name', () => {
       const yaml = `
 windows:
   - id: w
     size: { width: 10, height: 3 }
-    background: 235
+    background: "builtin:window-bg"
 `;
       expect(() => builder.build(yaml, screen)).not.toThrow();
     });

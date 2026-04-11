@@ -1,13 +1,19 @@
 import type { TextBoxOptions, StyleId } from '../types.mjs';
+import {
+	BUILTIN_WINDOW_BG,
+	BUILTIN_BORDER,
+	BUILTIN_BORDER_FOCUSED,
+	BUILTIN_BORDER_DISABLED,
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_DISABLED,
+	BUILTIN_TEXT_PLACEHOLDER,
+	BUILTIN_CURSOR,
+} from '../types.mjs';
+// Note: BUILTIN_TEXT_FOCUSED is not imported – TextBox has no focused-text style, only focused-border.
 import { Window } from '../Window.mjs';
 import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
 import { StyleRegistry } from '../StyleRegistry.mjs';
-
-/** ANSI 256-colour IDs used for border states. */
-const BORDER_NORMAL   = 240;
-const BORDER_FOCUSED  = 75;
-const BORDER_DISABLED = 238;
 
 /** A single-line text-input widget with scrolling, cursor display, and placeholder support.
  *  Wraps content area inside a single-line border (total height 3 by default).
@@ -27,15 +33,22 @@ export class TextBox extends Window {
 	/** Creates a TextBox at the given position and size (recommended height: 3 for single border).
 	 *  An optional StyleRegistry may be shared with the parent window. */
 	public constructor(pos: Pos, size: Size, options?: TextBoxOptions, registry?: StyleRegistry) {
+		const reg  = registry ?? new StyleRegistry();
+		const bgId = options?.background
+			?? reg.getNamed(BUILTIN_WINDOW_BG)
+			?? reg.register({ background: 237 });
+		const borderColor = options?.disabled
+			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: reg.getNamedForeground(BUILTIN_BORDER, 240);
 		super(pos, size, {
-			background: options?.background ?? 237,
+			background: bgId,
 			border: {
 				top: true, right: true, bottom: true, left: true,
 				style: 'single',
-				color: options?.disabled ? BORDER_DISABLED : BORDER_NORMAL,
+				color: borderColor,
 			},
 			active: !(options?.disabled ?? false),
-		}, registry);
+		}, reg);
 
 		this.value       = options?.value       ?? '';
 		this.placeholder = options?.placeholder ?? '';
@@ -46,10 +59,10 @@ export class TextBox extends Window {
 			? Math.max(0, Math.min(options.cursor, this.value.length))
 			: this.value.length;
 
-		this.textStyleId        = this.registry.register({ foreground: 252 });
-		this.placeholderStyleId = this.registry.register({ foreground: 242, italic: true });
-		this.cursorStyleId      = this.registry.register({ inverse: true });
-		this.disabledStyleId    = this.registry.register({ foreground: 245, dim: true });
+		this.textStyleId        = reg.getNamed(BUILTIN_TEXT)             ?? reg.register({ foreground: 252 });
+		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER) ?? reg.register({ foreground: 242, italic: true });
+		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)           ?? reg.register({ inverse: true });
+		this.disabledStyleId    = reg.getNamed(BUILTIN_TEXT_DISABLED)    ?? reg.register({ foreground: 245, dim: true });
 
 		this.clampScroll();
 	}
@@ -142,9 +155,11 @@ export class TextBox extends Window {
 	public override render(): void {
 		this.clear();
 
-		const borderColor = this.disabled ? BORDER_DISABLED
-		                  : this.focused  ? BORDER_FOCUSED
-		                  : BORDER_NORMAL;
+		const borderColor = this.disabled
+			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: this.focused
+				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
+				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
 		this.updateBorder({
 			top: true, right: true, bottom: true, left: true,
 			style: 'single',

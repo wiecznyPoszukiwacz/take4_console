@@ -1,4 +1,10 @@
 import type { CheckboxOptions, StyleId } from '../types.mjs';
+import {
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_FOCUSED,
+	BUILTIN_TEXT_DISABLED,
+	BUILTIN_TEXT_CHECKED,
+} from '../types.mjs';
 import { Window } from '../Window.mjs';
 import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
@@ -24,9 +30,11 @@ export class Checkbox extends Window {
 	/** Creates a Checkbox at the given position. Width is computed from the label automatically.
 	 *  An optional StyleRegistry may be shared with the parent window. */
 	public constructor(pos: Pos, label: string, options?: CheckboxOptions, registry?: StyleRegistry) {
+		const reg = registry ?? new StyleRegistry();
 		super(pos, new Size(INDICATOR_WIDTH + label.length, 1), {
+			background: options?.background,
 			active: !(options?.disabled ?? false),
-		}, registry);
+		}, reg);
 
 		this.label    = label;
 		this.checked  = options?.checked  ?? false;
@@ -34,10 +42,10 @@ export class Checkbox extends Window {
 		this.disabled = options?.disabled ?? false;
 		this.onChange = options?.onChange;
 
-		this.normalStyleId   = this.registry.register({ foreground: 252 });
-		this.focusedStyleId  = this.registry.register({ foreground: 255, bold: true });
-		this.checkedStyleId  = this.registry.register({ foreground: 76, bold: true });
-		this.disabledStyleId = this.registry.register({ foreground: 245, dim: true });
+		this.normalStyleId   = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
+		this.focusedStyleId  = reg.getNamed(BUILTIN_TEXT_FOCUSED)  ?? reg.register({ foreground: 255, bold: true });
+		this.checkedStyleId  = reg.getNamed(BUILTIN_TEXT_CHECKED)  ?? reg.register({ foreground: 76, bold: true });
+		this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
 	}
 
 	/** Toggles or sets the checked state. */

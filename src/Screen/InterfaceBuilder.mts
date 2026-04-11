@@ -6,6 +6,7 @@ import type {
   YamlPosSpec,
   YamlSizeSpec,
   YamlAxisValue,
+  StyleId,
   Focusable,
 } from './types.mjs';
 import { Window } from './Window.mjs';
@@ -14,11 +15,16 @@ import { WindowManager } from './WindowManager.mjs';
 import { Pos, Pct, pct } from './Pos.mjs';
 import { Size } from './Size.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
-import { Button } from './controls/Button.mjs';
-import { TextBox } from './controls/TextBox.mjs';
-import { TextArea } from './controls/TextArea.mjs';
-import { Checkbox } from './controls/Checkbox.mjs';
-import { Radio } from './controls/Radio.mjs';
+import { Button }       from './controls/Button.mjs';
+import { TextBox }      from './controls/TextBox.mjs';
+import { TextArea }     from './controls/TextArea.mjs';
+import { Checkbox }     from './controls/Checkbox.mjs';
+import { Radio }        from './controls/Radio.mjs';
+import { StatusLED }    from './controls/StatusLED.mjs';
+import { ProgressBar }  from './controls/ProgressBar.mjs';
+import { ProgressBarV } from './controls/ProgressBarV.mjs';
+import { LineChart }    from './controls/LineChart.mjs';
+import { BarChart }     from './controls/BarChart.mjs';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -76,6 +82,15 @@ function parseSize(spec: YamlSizeSpec): Size {
   throw new Error(`Invalid size spec: ${JSON.stringify(spec)}`);
 }
 
+/** Resolves a YAML background value (style name or numeric StyleId) to a StyleId.
+ *  String values are looked up by name in the registry (returns 0 if not found).
+ *  Numeric values are passed through as-is. Undefined becomes undefined (transparent). */
+function resolveBackground(bg: string | number | undefined, registry: StyleRegistry): StyleId | undefined {
+  if (bg === undefined) return undefined;
+  if (typeof bg === 'string') return registry.getNamed(bg) ?? 0;
+  return bg;
+}
+
 // ── InterfaceBuilder ──────────────────────────────────────────────────────────
 
 /** Builds a window hierarchy from a YAML description.
@@ -112,6 +127,7 @@ export class InterfaceBuilder {
 
   /** Builds the UI from a YAML string, adds all top-level windows to Screen,
    *  and registers focusable controls with WindowManager if provided.
+   *  Styles defined in the `styles:` section are registered before any windows are built.
    *  Returns a map of all windows and controls keyed by their YAML id. */
   public build(yamlText: string, screen: Screen, wm?: WindowManager): Map<string, Window> {
     const layout        = parse(yamlText) as YamlLayout;
@@ -119,6 +135,14 @@ export class InterfaceBuilder {
     const registry      = screen.getStyleRegistry();
     const pending: PendingRegistration[] = [];
     const contentWrites: Array<{ win: Window; text: string }> = [];
+
+    // Register YAML-defined named styles before building the window tree.
+    if (layout.styles) {
+      for (const styleDef of layout.styles) {
+        const { name, ...attrs } = styleDef;
+        registry.registerNamed(name, attrs);
+      }
+    }
 
     for (const def of layout.windows) {
       const win = this.buildNode(def, registry, result, pending, contentWrites, []);
@@ -160,7 +184,8 @@ export class InterfaceBuilder {
     parentChain: Window[],
   ): Window {
     const pos      = parsePos(def.pos);
-    const baseOpts = { background: def.background, border: def.border, active: def.active };
+    const bgId     = resolveBackground(def.background, registry);
+    const baseOpts = { background: bgId, border: def.border, active: def.active };
 
     let win: Window;
 
@@ -230,6 +255,66 @@ export class InterfaceBuilder {
         }, registry);
         pending.push({ control: r, parents: [...parentChain] });
         win = r;
+        break;
+      }
+
+      case 'statusled': {
+        const led = new StatusLED(pos, {
+          ...baseOpts,
+          state: def.state,
+          label: def.label,
+        }, registry);
+        win = led;
+        break;
+      }
+
+      case 'progressbar': {
+        const pb = new ProgressBar(pos, this.requireSize(def), {
+          ...baseOpts,
+          value:      def.barValue,
+          max:        def.max,
+          showLabel:  def.showLabel,
+          fillColor:  def.fillColor,
+          emptyColor: def.emptyColor,
+        }, registry);
+        win = pb;
+        break;
+      }
+
+      case 'progressbarv': {
+        const pbv = new ProgressBarV(pos, this.requireSize(def), {
+          ...baseOpts,
+          value:      def.barValue,
+          max:        def.max,
+          fillColor:  def.fillColor,
+          emptyColor: def.emptyColor,
+        }, registry);
+        win = pbv;
+        break;
+      }
+
+      case 'linechart': {
+        const lc = new LineChart(pos, this.requireSize(def), {
+          ...baseOpts,
+          data:  def.data,
+          min:   def.min,
+          max:   def.max,
+          color: def.chartColor,
+        }, registry);
+        win = lc;
+        break;
+      }
+
+      case 'barchart': {
+        const bc = new BarChart(pos, this.requireSize(def), {
+          ...baseOpts,
+          data:     def.data,
+          labels:   def.barLabels,
+          max:      def.max,
+          barColor: def.chartColor,
+          barWidth: def.barWidth,
+        }, registry);
+        win = bc;
         break;
       }
 

@@ -207,26 +207,38 @@ describe('Window', () => {
 
   describe('background option', () => {
     it('fills entire region with background color on render', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: 236 });
+      const reg  = new StyleRegistry();
+      const bgId = reg.register({ background: 236 });
+      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId }, reg);
       win.render();
       expect(win.getCell(0, 0).attributes.background).toBe(236);
       expect(win.getCell(4, 2).attributes.background).toBe(236);
     });
 
-    it('false background leaves region blank', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: false });
+    it('undefined background leaves region blank', () => {
+      const win = new Window(new Pos(0, 0), new Size(5, 3));
+      win.render();
+      expect(win.getCell(0, 0)).toEqual({ char: ' ', attributes: {} });
+    });
+
+    it('StyleId 0 background leaves region blank', () => {
+      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: 0 });
       win.render();
       expect(win.getCell(0, 0)).toEqual({ char: ' ', attributes: {} });
     });
 
     it('inactive window gets dim on background cells', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: 236, active: false });
+      const reg  = new StyleRegistry();
+      const bgId = reg.register({ background: 236 });
+      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId, active: false }, reg);
       win.render();
       expect(win.getCell(2, 1).attributes.dim).toBe(true);
     });
 
     it('active window does not get dim on background cells', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: 236, active: true });
+      const reg  = new StyleRegistry();
+      const bgId = reg.register({ background: 236 });
+      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId, active: true }, reg);
       win.render();
       expect(win.getCell(2, 1).attributes.dim).toBeUndefined();
     });

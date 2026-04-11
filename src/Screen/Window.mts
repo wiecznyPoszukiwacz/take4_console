@@ -29,7 +29,7 @@ export class Window {
 
 	/** User-written content – survives render() cycles. */
 	private content: Region;
-	private background: StyleId | false;
+	private background: StyleId;
 	private border: WindowBorder | false;
 	private active: boolean;
 	private posSpec: Pos;
@@ -64,10 +64,7 @@ export class Window {
 			this.y = 0;
 		}
 
-		const bg = options?.background;
-		this.background = bg !== undefined && bg !== false
-			? this.registry.register({ background: bg })
-			: false;
+		this.background = options?.background ?? 0;
 	}
 
 	/** Returns the window dimensions (columns × rows). */
@@ -212,9 +209,10 @@ export class Window {
 		}
 	}
 
-	/** Fills the display buffer with the background style. When inactive, adds dim to every cell. */
+	/** Fills the display buffer with the background style. When inactive, adds dim to every cell.
+	 *  No-op when background is 0 (transparent). */
 	private paintBackground(): void {
-		if (this.background === false) return;
+		if (this.background === 0) return;
 		let bgId = this.background;
 		if (!this.active) {
 			bgId = this.registry.merge(bgId, this.registry.register({ dim: true }));
@@ -245,7 +243,7 @@ export class Window {
 		if (width < 2 && height < 2) return;
 		const chars = BORDER_CHARS[b.style ?? 'single'];
 
-		const bgColor = this.background !== false
+		const bgColor = this.background !== 0
 			? this.registry.get(this.background).background
 			: undefined;
 

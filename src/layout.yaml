@@ -11,7 +11,7 @@ windows:
 
   - id: dialog
     pos: center
-    size: { width: "90%", height: "88%" }
+    size: { width: "90%", height: "92%" }
     background: 236
     border:
       top: true
@@ -20,12 +20,13 @@ windows:
       left: true
       style: rounded
       color: 240
-    content: "  User settings"
+    content: "  Controls demo"
     children:
 
+      # ── Top-left: text inputs + checkboxes ───────────────────────────────────
       - id: leftPanel
         pos: { x: 1, y: 2 }
-        size: { width: "46%", height: "85%" }
+        size: { width: "46%", height: "43%" }
         background: 235
         border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
         content: "Personal info"
@@ -39,68 +40,134 @@ windows:
             focused: true
           - id: tbEmail
             type: textbox
-            pos: { x: 0, y: 6 }
+            pos: { x: 0, y: 5 }
             size: { fillWidth: 3 }
             value: "jan@example.com"
             placeholder: "e-mail"
-          - id: tbDisabled
-            type: textbox
-            pos: { x: 0, y: 10 }
-            size: { fillWidth: 3 }
-            value: "readonly value"
-            disabled: true
           - id: cb1
             type: checkbox
-            pos: { x: 0, y: 16 }
+            pos: { x: 1, y: 9 }
             label: "Enable notifications"
             checked: true
           - id: cb2
             type: checkbox
-            pos: { x: 0, y: 18 }
+            pos: { x: 1, y: 10 }
             label: "Dark mode"
             checked: true
           - id: cb3
             type: checkbox
-            pos: { x: 0, y: 20 }
+            pos: { x: 1, y: 11 }
             label: "Beta features"
           - id: cb4
             type: checkbox
-            pos: { x: 0, y: 22 }
+            pos: { x: 1, y: 12 }
             label: "Telemetry (disabled)"
             disabled: true
 
+      # ── Top-right: language radios + service status LEDs ─────────────────────
       - id: rightPanel
         pos: { x: "50%", y: 2 }
-        size: { width: "48%", height: "85%" }
+        size: { width: "48%", height: "43%" }
         background: 235
         border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
         content: "Preferences"
         children:
           - id: r1
             type: radio
-            pos: { x: 0, y: 4 }
+            pos: { x: 1, y: 2 }
             label: "English"
             checked: true
           - id: r2
             type: radio
-            pos: { x: 0, y: 6 }
+            pos: { x: 1, y: 3 }
             label: "Polski"
             focused: true
           - id: r3
             type: radio
-            pos: { x: 0, y: 8 }
+            pos: { x: 1, y: 4 }
             label: "Deutsch"
           - id: r4
             type: radio
-            pos: { x: 0, y: 10 }
+            pos: { x: 1, y: 5 }
             label: "Français (disabled)"
             disabled: true
-          - id: ta
-            type: textarea
-            pos: { x: 0, y: 15 }
-            size: { width: "90%", height: "40%" }
-            value: "First line of notes.\nSecond line here.\nThird line."
+          - id: ledApi
+            type: statusled
+            pos: { x: 1, y: 8 }
+            state: ok
+            label: "API Server"
+          - id: ledDb
+            type: statusled
+            pos: { x: 1, y: 9 }
+            state: ok
+            label: "Database"
+          - id: ledCache
+            type: statusled
+            pos: { x: 1, y: 10 }
+            state: warn
+            label: "Cache"
+          - id: ledWorker
+            type: statusled
+            pos: { x: 1, y: 11 }
+            state: error
+            label: "Worker"
 
+      # ── Bottom-left: resource progress bars ──────────────────────────────────
+      - id: monitorPanel
+        pos: { x: 1, y: "46%" }
+        size: { width: "46%", height: "43%" }
+        background: 235
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        content: "Resources"
+        children:
+          - id: pbCpu
+            type: progressbar
+            pos: { x: 0, y: 2 }
+            size: { width: "78%", height: 1 }
+            barValue: 73
+            max: 100
+            fillColor: 75
+          - id: pbMem
+            type: progressbar
+            pos: { x: 0, y: 4 }
+            size: { width: "78%", height: 1 }
+            barValue: 45
+            max: 100
+            fillColor: 82
+          - id: pbDisk
+            type: progressbar
+            pos: { x: 0, y: 6 }
+            size: { width: "78%", height: 1 }
+            barValue: 88
+            max: 100
+            fillColor: 214
+          - id: pbvLoad
+            type: progressbarv
+            pos: { x: -4, y: 1 }
+            size: { width: 3, height: "82%" }
+            barValue: 68
+            max: 100
+            fillColor: 75
+
+      # ── Bottom-right: line chart + bar chart ──────────────────────────────────
+      - id: chartsPanel
+        pos: { x: "50%", y: "46%" }
+        size: { width: "48%", height: "43%" }
+        background: 235
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        content: "Charts"
+        children:
+          - id: lineChart
+            type: linechart
+            pos: { x: 0, y: 0 }
+            size: { fillHeight: "56%" }
+          - id: barChart
+            type: barchart
+            pos: { x: "58%", y: 0 }
+            size: { fillHeight: "40%" }
+            barWidth: 2
+
+      # ── Buttons ───────────────────────────────────────────────────────────────
       - id: btnDisabled
         type: button
         pos: { x: 1, y: -4 }

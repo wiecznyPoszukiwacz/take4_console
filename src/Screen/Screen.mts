@@ -1,4 +1,16 @@
 import type { CellAttributes, StyleId } from './types.mjs';
+import {
+	BUILTIN_WINDOW_BG,
+	BUILTIN_BORDER,
+	BUILTIN_BORDER_FOCUSED,
+	BUILTIN_BORDER_DISABLED,
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_FOCUSED,
+	BUILTIN_TEXT_DISABLED,
+	BUILTIN_TEXT_PLACEHOLDER,
+	BUILTIN_TEXT_CHECKED,
+	BUILTIN_CURSOR,
+} from './types.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
 import { Window } from './Window.mjs';
 import { Pos } from './Pos.mjs';
@@ -7,13 +19,15 @@ import { Size } from './Size.mjs';
 export class Screen extends Window {
 	private ownRegistry: StyleRegistry;
 
-	/** Initializes the root window sized to the current terminal dimensions. */
+	/** Initializes the root window sized to the current terminal dimensions.
+	 *  Pre-registers the built-in named styles used by all controls. */
 	public constructor() {
 		const width    = process.stdout.columns ?? 80;
 		const height   = process.stdout.rows    ?? 24;
 		const registry = new StyleRegistry();
 		super(Pos.topLeft(), new Size(width, height), undefined, registry);
 		this.ownRegistry = registry;
+		this.registerBuiltinDefaults();
 	}
 
 	/** Registers a CellAttributes object in the screen's style registry and returns its stable ID. */
@@ -24,6 +38,26 @@ export class Screen extends Window {
 	/** Returns the screen's StyleRegistry so child Windows can share the same ID space. */
 	public getStyleRegistry(): StyleRegistry {
 		return this.ownRegistry;
+	}
+
+	/** Overrides a built-in named style (or registers any named style) and returns its new ID.
+	 *  Controls will use the updated style on their next render() call. */
+	public setBuiltinStyle(name: string, attrs: CellAttributes): StyleId {
+		return this.ownRegistry.registerNamed(name, attrs);
+	}
+
+	/** Registers default CellAttributes for all built-in style names. */
+	private registerBuiltinDefaults(): void {
+		this.ownRegistry.registerNamed(BUILTIN_WINDOW_BG,        { background: 237 });
+		this.ownRegistry.registerNamed(BUILTIN_BORDER,           { foreground: 240 });
+		this.ownRegistry.registerNamed(BUILTIN_BORDER_FOCUSED,   { foreground: 75 });
+		this.ownRegistry.registerNamed(BUILTIN_BORDER_DISABLED,  { foreground: 238 });
+		this.ownRegistry.registerNamed(BUILTIN_TEXT,             { foreground: 252 });
+		this.ownRegistry.registerNamed(BUILTIN_TEXT_FOCUSED,     { foreground: 255, bold: true });
+		this.ownRegistry.registerNamed(BUILTIN_TEXT_DISABLED,    { foreground: 245, dim: true });
+		this.ownRegistry.registerNamed(BUILTIN_TEXT_PLACEHOLDER, { foreground: 242, italic: true });
+		this.ownRegistry.registerNamed(BUILTIN_TEXT_CHECKED,     { foreground: 76, bold: true });
+		this.ownRegistry.registerNamed(BUILTIN_CURSOR,           { inverse: true });
 	}
 
 	/**

@@ -1,6 +1,29 @@
 /** Text and background color, expressed as ANSI color number (0–255) or hex string (e.g. '#ff0000'). */
 export type Color = number | string;
 
+// ── Built-in style names ──────────────────────────────────────────────────────
+
+/** Name of the default background style used by windows and controls. */
+export const BUILTIN_WINDOW_BG          = 'builtin:window-bg';
+/** Name of the default border color style (foreground = border color). */
+export const BUILTIN_BORDER             = 'builtin:border';
+/** Name of the focused border color style. */
+export const BUILTIN_BORDER_FOCUSED     = 'builtin:border-focused';
+/** Name of the disabled border color style. */
+export const BUILTIN_BORDER_DISABLED    = 'builtin:border-disabled';
+/** Name of the normal text style used by controls. */
+export const BUILTIN_TEXT               = 'builtin:text';
+/** Name of the focused text style used by controls. */
+export const BUILTIN_TEXT_FOCUSED       = 'builtin:text-focused';
+/** Name of the disabled text style used by controls. */
+export const BUILTIN_TEXT_DISABLED      = 'builtin:text-disabled';
+/** Name of the placeholder text style used by text input controls. */
+export const BUILTIN_TEXT_PLACEHOLDER   = 'builtin:text-placeholder';
+/** Name of the checked/selected indicator style used by Checkbox and Radio. */
+export const BUILTIN_TEXT_CHECKED       = 'builtin:text-checked';
+/** Name of the cursor highlight style (inverse) used by text input controls. */
+export const BUILTIN_CURSOR             = 'builtin:cursor';
+
 /** Integer handle returned by StyleRegistry.register(). ID 0 always means no style (empty {}). */
 export type StyleId = number;
 
@@ -48,8 +71,8 @@ export interface WindowBorder {
 
 /** Window visual options passed to the constructor. */
 export interface WindowOptions {
-  /** Background color, or false for transparent. Default: false. */
-  background?: Color | false;
+  /** Background style ID registered in a StyleRegistry. 0 or undefined = transparent. Default: undefined. */
+  background?: StyleId;
   /** Border config, or true for all sides with single style. Default: false. */
   border?: WindowBorder | boolean;
   /** Whether the window is active. Affects border/background appearance. Default: true. */
@@ -130,6 +153,66 @@ export interface RadioOptions extends ControlOptions {
   onChange?: (checked: boolean) => void;
 }
 
+/** Options for the StatusLED control. */
+export interface StatusLEDOptions extends WindowOptions {
+  /** Visual state of the LED. Default: 'off'. */
+  state?: 'ok' | 'warn' | 'error' | 'off';
+  /** Label text shown to the right of the indicator dot. Default: ''. */
+  label?: string;
+}
+
+/** Options for the ProgressBar (horizontal) control. */
+export interface ProgressBarOptions extends WindowOptions {
+  /** Current value. Default: 0. */
+  value?: number;
+  /** Maximum value. Default: 100. */
+  max?: number;
+  /** Whether to show the percentage label centred over the bar. Default: true. */
+  showLabel?: boolean;
+  /** ANSI color number for the filled portion. Default: 75. */
+  fillColor?: number;
+  /** ANSI color number for the empty portion. Default: 237. */
+  emptyColor?: number;
+}
+
+/** Options for the ProgressBarV (vertical) control. */
+export interface ProgressBarVOptions extends WindowOptions {
+  /** Current value. Default: 0. */
+  value?: number;
+  /** Maximum value. Default: 100. */
+  max?: number;
+  /** ANSI color number for the filled portion. Default: 75. */
+  fillColor?: number;
+  /** ANSI color number for the empty portion. Default: 237. */
+  emptyColor?: number;
+}
+
+/** Options for the LineChart control. */
+export interface LineChartOptions extends WindowOptions {
+  /** Data points to plot. Default: []. */
+  data?: number[];
+  /** Minimum Y value; if omitted, derived from data. */
+  min?: number;
+  /** Maximum Y value; if omitted, derived from data. */
+  max?: number;
+  /** ANSI color number for the line. Default: 75. */
+  color?: number;
+}
+
+/** Options for the BarChart control. */
+export interface BarChartOptions extends WindowOptions {
+  /** Data values for each bar. Default: []. */
+  data?: number[];
+  /** Label string for each bar (truncated to barWidth columns). Default: []. */
+  labels?: string[];
+  /** Maximum Y value; if omitted, derived from data. */
+  max?: number;
+  /** ANSI color number for the bars. Default: 75. */
+  barColor?: number;
+  /** Width in columns of each bar. Default: 1. */
+  barWidth?: number;
+}
+
 // ── InterfaceBuilder YAML schema ──────────────────────────────────────────────
 
 /** A single axis value: absolute number, edge-relative negative, or percentage string ("N%"). */
@@ -152,7 +235,14 @@ export type YamlSizeSpec =
   | { width: YamlAxisValue; height: YamlAxisValue };
 
 /** Control type tags supported by InterfaceBuilder. */
-export type YamlWindowType = 'window' | 'button' | 'textbox' | 'textarea' | 'checkbox' | 'radio';
+export type YamlWindowType = 'window' | 'button' | 'textbox' | 'textarea' | 'checkbox' | 'radio'
+  | 'statusled' | 'progressbar' | 'progressbarv' | 'linechart' | 'barchart';
+
+/** A named style entry in the YAML layout's `styles:` section. Extends CellAttributes with a required name. */
+export interface YamlStyleDef extends CellAttributes {
+  /** Name used to reference this style. May override built-in names (e.g. 'builtin:window-bg'). */
+  name: string;
+}
 
 /** A single window or control definition in a YAML layout. */
 export interface YamlWindowDef {
@@ -164,8 +254,8 @@ export interface YamlWindowDef {
   pos?: YamlPosSpec;
   /** Dimensions of the window. Required for window/button/textbox/textarea; ignored for checkbox/radio (auto-sized). */
   size?: YamlSizeSpec;
-  /** Background color. false means transparent. */
-  background?: Color | false;
+  /** Background style: a named style string (e.g. 'builtin:window-bg') or a numeric StyleId. Omit for transparent. */
+  background?: string | number;
   /** Border configuration. true enables all sides with single style. */
   border?: WindowBorder | boolean;
   /** Whether the window is active (affects dim). Default: true. */
@@ -190,10 +280,34 @@ export interface YamlWindowDef {
   onPress?: string;
   /** Callback ID registered via InterfaceBuilder.registerCallback() — fired on value change. */
   onChange?: string;
+  /** LED state ('ok' | 'warn' | 'error' | 'off') — used by statusled. */
+  state?: 'ok' | 'warn' | 'error' | 'off';
+  /** Whether to show a percentage label over a progress bar. Default: true. */
+  showLabel?: boolean;
+  /** ANSI color for the filled portion (ProgressBar, ProgressBarV). */
+  fillColor?: number;
+  /** ANSI color for the empty portion (ProgressBar, ProgressBarV). */
+  emptyColor?: number;
+  /** Current numeric value for ProgressBar / ProgressBarV. */
+  barValue?: number;
+  /** Maximum numeric value for ProgressBar, ProgressBarV, LineChart, BarChart. */
+  max?: number;
+  /** Minimum numeric value for LineChart. */
+  min?: number;
+  /** Numeric data array for LineChart / BarChart. */
+  data?: number[];
+  /** String label array for BarChart bars. */
+  barLabels?: string[];
+  /** Line color for LineChart or bar color for BarChart (ANSI number). */
+  chartColor?: number;
+  /** Width of each bar in BarChart columns. Default: 1. */
+  barWidth?: number;
 }
 
 /** Top-level YAML layout document consumed by InterfaceBuilder. */
 export interface YamlLayout {
+  /** Named style definitions registered before windows are built. */
+  styles?: YamlStyleDef[];
   /** Top-level windows to add to the Screen. */
   windows: YamlWindowDef[];
 }

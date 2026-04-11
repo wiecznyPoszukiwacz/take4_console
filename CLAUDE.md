@@ -80,9 +80,38 @@ ANSI color encoding: 256-color `38;5;n` for `number`, true-color `38;2;r;g;b` fo
 All interfaces and type aliases live here. Notable:
 - `StyleId = number` – integer handle into a StyleRegistry
 - `CellAttributes` – all SGR attributes (bold, dim, italic, foreground, background, …)
-- `WindowOptions` – constructor options: `background`, `border`, `active`
+- `WindowOptions` – constructor options: `background` (`StyleId`), `border`, `active`
 - `WriteTextOptions` – `{ x?, y?, style?: StyleId }`
 - `WindowBorder` – per-side flags + `style` (`single`/`double`/`rounded`) + `color`
+- Per-control option interfaces: `ButtonOptions`, `TextBoxOptions`, `TextAreaOptions`, `CheckboxOptions`, `RadioOptions`, `StatusLEDOptions`, `ProgressBarOptions`, `ProgressBarVOptions`, `LineChartOptions`, `BarChartOptions`
+- `BUILTIN_*` string constants (`BUILTIN_WINDOW_BG`, `BUILTIN_BORDER`, …) – names for the ten default styles pre-registered by `Screen`; controls look them up via `registry.getNamed(...)` with hardcoded fallbacks
+
+### Controls (`src/Screen/controls/`)
+All controls extend `Window`. Constructor signature: `(pos, size?, options?, registry?)` — `size` is omitted for auto-sized controls (`Checkbox`, `Radio`, `StatusLED`).
+
+**Interactive (`Focusable`, registerable with `WindowManager`):**
+- `Button` – clickable button; `onPress` on Enter/Space
+- `TextBox` – single-line text input with scrolling + cursor
+- `TextArea` – multi-line text input with 2-D cursor
+- `Checkbox` – `[✓]/[ ]` toggle, auto-sized to label
+- `Radio` – `(●)/( )` single-selection, auto-sized to label
+
+**Read-only display (added 0.10.0):**
+- `StatusLED` – coloured dot + optional label (`ok`/`warn`/`error`/`off`)
+- `ProgressBar` – horizontal block-character bar with percentage label
+- `ProgressBarV` – vertical block-character bar filling from the bottom
+- `LineChart` – line chart with labelled Y-axis and X-axis, box-drawing chars
+- `BarChart` – vertical bar chart with per-bar labels
+
+Read-only controls return `false` from `isFocused()`/`isDisabled()` and ignore `setFocused()`.
+
+### InterfaceBuilder (`src/Screen/InterfaceBuilder.mts`)
+Builds a window tree from a YAML description. `build(yamlText, screen, wm?)` / `buildFromFile(path, screen, wm?)` return `Map<string, Window>` keyed by YAML `id`.
+
+- Supports all 11 built-in control classes via `type:` (`window`, `button`, `textbox`, `textarea`, `checkbox`, `radio`, `statusled`, `progressbar`, `progressbarv`, `linechart`, `barchart`)
+- Optional top-level `styles:` section registers named styles (including built-in overrides) before windows are built
+- `registerCallback(id, fn)` wires `onPress` / `onChange` YAML fields to runtime callbacks
+- Focusable controls are auto-registered with the `WindowManager` after the tree is built
 
 ## Key conventions
 

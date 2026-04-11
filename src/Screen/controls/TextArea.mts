@@ -1,12 +1,19 @@
 import type { TextAreaOptions, StyleId } from '../types.mjs';
+import {
+	BUILTIN_WINDOW_BG,
+	BUILTIN_BORDER,
+	BUILTIN_BORDER_FOCUSED,
+	BUILTIN_BORDER_DISABLED,
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_DISABLED,
+	BUILTIN_TEXT_PLACEHOLDER,
+	BUILTIN_CURSOR,
+} from '../types.mjs';
+// Note: BUILTIN_TEXT_FOCUSED is not imported – TextArea has no focused-text style, only focused-border.
 import { Window } from '../Window.mjs';
 import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
 import { StyleRegistry } from '../StyleRegistry.mjs';
-
-const BORDER_NORMAL   = 240;
-const BORDER_FOCUSED  = 75;
-const BORDER_DISABLED = 238;
 
 /** A multi-line text-input widget with 2-D cursor, scrolling, and placeholder support.
  *  Call handleKey() to feed raw terminal key strings from your input loop. */
@@ -26,15 +33,22 @@ export class TextArea extends Window {
 	/** Creates a TextArea at the given position and size.
 	 *  An optional StyleRegistry may be shared with the parent window. */
 	public constructor(pos: Pos, size: Size, options?: TextAreaOptions, registry?: StyleRegistry) {
+		const reg  = registry ?? new StyleRegistry();
+		const bgId = options?.background
+			?? reg.getNamed(BUILTIN_WINDOW_BG)
+			?? reg.register({ background: 237 });
+		const borderColor = options?.disabled
+			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: reg.getNamedForeground(BUILTIN_BORDER, 240);
 		super(pos, size, {
-			background: options?.background ?? 237,
+			background: bgId,
 			border: {
 				top: true, right: true, bottom: true, left: true,
 				style: 'single',
-				color: options?.disabled ? BORDER_DISABLED : BORDER_NORMAL,
+				color: borderColor,
 			},
 			active: !(options?.disabled ?? false),
-		}, registry);
+		}, reg);
 
 		this.lines       = (options?.value ?? '').split('\n');
 		this.placeholder = options?.placeholder ?? '';
@@ -50,10 +64,10 @@ export class TextArea extends Window {
 		};
 		this.cursor.x = Math.max(0, Math.min(rawCursor.x, this.lines[this.cursor.y].length));
 
-		this.textStyleId        = this.registry.register({ foreground: 252 });
-		this.placeholderStyleId = this.registry.register({ foreground: 242, italic: true });
-		this.cursorStyleId      = this.registry.register({ inverse: true });
-		this.disabledStyleId    = this.registry.register({ foreground: 245, dim: true });
+		this.textStyleId        = reg.getNamed(BUILTIN_TEXT)             ?? reg.register({ foreground: 252 });
+		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER) ?? reg.register({ foreground: 242, italic: true });
+		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)           ?? reg.register({ inverse: true });
+		this.disabledStyleId    = reg.getNamed(BUILTIN_TEXT_DISABLED)    ?? reg.register({ foreground: 245, dim: true });
 
 		this.clampScroll();
 	}
@@ -186,9 +200,11 @@ export class TextArea extends Window {
 	public override render(): void {
 		this.clear();
 
-		const borderColor = this.disabled ? BORDER_DISABLED
-		                  : this.focused  ? BORDER_FOCUSED
-		                  : BORDER_NORMAL;
+		const borderColor = this.disabled
+			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: this.focused
+				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
+				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
 		this.updateBorder({
 			top: true, right: true, bottom: true, left: true,
 			style: 'single',

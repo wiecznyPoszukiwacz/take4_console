@@ -1,16 +1,21 @@
 import type { ButtonOptions, StyleId } from '../types.mjs';
+import {
+	BUILTIN_WINDOW_BG,
+	BUILTIN_BORDER,
+	BUILTIN_BORDER_FOCUSED,
+	BUILTIN_BORDER_DISABLED,
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_FOCUSED,
+	BUILTIN_TEXT_DISABLED,
+} from '../types.mjs';
 import { Window } from '../Window.mjs';
 import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
 import { StyleRegistry } from '../StyleRegistry.mjs';
 
-/** ANSI 256-colour IDs used for border states. */
-const BORDER_NORMAL   = 240;
-const BORDER_FOCUSED  = 75;
-const BORDER_DISABLED = 238;
-
 /** A clickable button that renders a centred label inside a rounded border.
- *  Visual state (normal / focused / disabled) is controlled via setters. */
+ *  Visual state (normal / focused / disabled) is controlled via setters.
+ *  Appearance can be customised by overriding the built-in named styles via Screen.setBuiltinStyle(). */
 export class Button extends Window {
 	private label: string;
 	private focused: boolean;
@@ -23,24 +28,31 @@ export class Button extends Window {
 	/** Creates a Button at the given position and size.
 	 *  An optional StyleRegistry may be shared with the parent window. */
 	public constructor(pos: Pos, size: Size, options?: ButtonOptions, registry?: StyleRegistry) {
+		const reg   = registry ?? new StyleRegistry();
+		const bgId  = options?.background
+			?? reg.getNamed(BUILTIN_WINDOW_BG)
+			?? reg.register({ background: 237 });
+		const borderColor = options?.disabled
+			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: reg.getNamedForeground(BUILTIN_BORDER, 240);
 		super(pos, size, {
-			background: options?.background ?? 237,
+			background: bgId,
 			border: {
 				top: true, right: true, bottom: true, left: true,
 				style: 'rounded',
-				color: options?.disabled ? BORDER_DISABLED : BORDER_NORMAL,
+				color: borderColor,
 			},
 			active: !(options?.disabled ?? false),
-		}, registry);
+		}, reg);
 
 		this.label    = options?.label    ?? '';
 		this.focused  = options?.focused  ?? false;
 		this.disabled = options?.disabled ?? false;
 		this.onPress  = options?.onPress;
 
-		this.normalStyleId   = this.registry.register({ foreground: 252 });
-		this.focusedStyleId  = this.registry.register({ foreground: 255, bold: true });
-		this.disabledStyleId = this.registry.register({ foreground: 245 });
+		this.normalStyleId   = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
+		this.focusedStyleId  = reg.getNamed(BUILTIN_TEXT_FOCUSED)  ?? reg.register({ foreground: 255, bold: true });
+		this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
 	}
 
 	/** Sets the label text displayed on the button. */
@@ -86,9 +98,11 @@ export class Button extends Window {
 	public override render(): void {
 		this.clear();
 
-		const borderColor = this.disabled ? BORDER_DISABLED
-		                  : this.focused  ? BORDER_FOCUSED
-		                  : BORDER_NORMAL;
+		const borderColor = this.disabled
+			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: this.focused
+				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
+				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
 		this.updateBorder({
 			top: true, right: true, bottom: true, left: true,
 			style: 'rounded',

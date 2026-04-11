@@ -1,4 +1,4 @@
-import type { CellAttributes, StyleId } from './types.mjs';
+import type { CellAttributes, StyleId, Color } from './types.mjs';
 
 /** Central registry that maps integer style IDs to CellAttributes objects.
  *  Identical attribute sets always map to the same ID (deduplication). */
@@ -7,6 +7,8 @@ export class StyleRegistry {
 	private styles: CellAttributes[] = [{}];
 	/** Serialized key → ID, for deduplication. */
 	private index: Map<string, StyleId> = new Map([['{}', 0]]);
+	/** Name → ID map for built-in and user-defined named styles. */
+	private named: Map<string, StyleId> = new Map();
 
 	/** Registers a CellAttributes object and returns its stable ID.
 	 *  If an identical style was registered before, returns the existing ID. */
@@ -18,6 +20,27 @@ export class StyleRegistry {
 		this.styles.push({ ...attrs });
 		this.index.set(key, id);
 		return id;
+	}
+
+	/** Registers a CellAttributes object under a given name and returns its stable ID.
+	 *  Calling with the same name again replaces the previous association. */
+	public registerNamed(name: string, attrs: CellAttributes): StyleId {
+		const id = this.register(attrs);
+		this.named.set(name, id);
+		return id;
+	}
+
+	/** Returns the StyleId associated with the given name, or undefined if not registered. */
+	public getNamed(name: string): StyleId | undefined {
+		return this.named.get(name);
+	}
+
+	/** Returns the foreground Color of a named style, or the fallback value if the name is
+	 *  not registered or the style has no foreground attribute. */
+	public getNamedForeground(name: string, fallback: Color): Color {
+		const id = this.named.get(name);
+		if (id === undefined) return fallback;
+		return this.styles[id]?.foreground ?? fallback;
 	}
 
 	/** Returns the CellAttributes for the given style ID. Returns {} for unknown IDs. */
