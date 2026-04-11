@@ -1,0 +1,119 @@
+windows:
+  - id: header
+    pos: topLeft
+    size: { fillWidth: 1 }
+    background: 24
+
+  - id: statusBar
+    pos: { preset: bottom }
+    size: { fillWidth: 1 }
+    background: 24
+
+  - id: dialog
+    pos: center
+    size: { width: "90%", height: "88%" }
+    background: 236
+    border:
+      top: true
+      right: true
+      bottom: true
+      left: true
+      style: rounded
+      color: 240
+    content: "  User settings"
+    children:
+
+      - id: leftPanel
+        pos: { x: 1, y: 2 }
+        size: { width: "46%", height: "85%" }
+        background: 235
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        content: "Personal info"
+        children:
+          - id: tbUsername
+            type: textbox
+            pos: { x: 0, y: 2 }
+            size: { fillWidth: 3 }
+            value: "jan_kowalski"
+            placeholder: "username"
+            focused: true
+          - id: tbEmail
+            type: textbox
+            pos: { x: 0, y: 6 }
+            size: { fillWidth: 3 }
+            value: "jan@example.com"
+            placeholder: "e-mail"
+          - id: tbDisabled
+            type: textbox
+            pos: { x: 0, y: 10 }
+            size: { fillWidth: 3 }
+            value: "readonly value"
+            disabled: true
+          - id: cb1
+            type: checkbox
+            pos: { x: 0, y: 16 }
+            label: "Enable notifications"
+            checked: true
+          - id: cb2
+            type: checkbox
+            pos: { x: 0, y: 18 }
+            label: "Dark mode"
+            checked: true
+          - id: cb3
+            type: checkbox
+            pos: { x: 0, y: 20 }
+            label: "Beta features"
+          - id: cb4
+            type: checkbox
+            pos: { x: 0, y: 22 }
+            label: "Telemetry (disabled)"
+            disabled: true
+
+      - id: rightPanel
+        pos: { x: "50%", y: 2 }
+        size: { width: "48%", height: "85%" }
+        background: 235
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        content: "Preferences"
+        children:
+          - id: r1
+            type: radio
+            pos: { x: 0, y: 4 }
+            label: "English"
+            checked: true
+          - id: r2
+            type: radio
+            pos: { x: 0, y: 6 }
+            label: "Polski"
+            focused: true
+          - id: r3
+            type: radio
+            pos: { x: 0, y: 8 }
+            label: "Deutsch"
+          - id: r4
+            type: radio
+            pos: { x: 0, y: 10 }
+            label: "Français (disabled)"
+            disabled: true
+          - id: ta
+            type: textarea
+            pos: { x: 0, y: 15 }
+            size: { width: "90%", height: "40%" }
+            value: "First line of notes.\nSecond line here.\nThird line."
+
+      - id: btnDisabled
+        type: button
+        pos: { x: 1, y: -4 }
+        size: { width: 11, height: 3 }
+        label: "Delete"
+        disabled: true
+      - id: btnCancel
+        type: button
+        pos: { x: -15, y: -4 }
+        size: { width: 11, height: 3 }
+        label: "Cancel"
+      - id: btnSave
+        type: button
+        pos: { x: -27, y: -4 }
+        size: { width: 11, height: 3 }
+        label: " Save"
