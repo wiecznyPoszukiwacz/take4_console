@@ -1,13 +1,62 @@
 {
   "name": "take4-console",
-  "version": "0.1.0",
-  "description": "Take4 console application",
+  "version": "0.15.0",
+  "description": "A terminal cell-grid rendering library for Node.js — windowed UI with styles, borders, layouts, keyboard/mouse input, and a YAML layout builder.",
   "type": "module",
-  "main": "dist/index.mjs",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "terminal",
+    "tui",
+    "console",
+    "cli",
+    "ui",
+    "ansi",
+    "widgets",
+    "controls",
+    "window",
+    "layout",
+    "yaml",
+    "chart",
+    "sparkline",
+    "progressbar",
+    "nerdfonts"
+  ],
+  "author": "Jaroslaw Mezyk",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arcymag/take4-console.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arcymag/take4-console/issues"
+  },
+  "homepage": "https://github.com/arcymag/take4-console#readme",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.mjs",
-    "dev": "tsx src/index.mts",
+    "prepublishOnly": "npm run build && npm test",
+    "dev": "tsx src/demo.mts",
+    "demo": "tsx src/demo.mts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -16,5 +65,8 @@
     "tsx": "^4.19.3",
     "typescript": "^6.0.2",
     "vitest": "^3.1.2"
+  },
+  "dependencies": {
+    "yaml": "^2.8.3"
   }
 }

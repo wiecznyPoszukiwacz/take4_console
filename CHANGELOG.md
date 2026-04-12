@@ -1,5 +1,286 @@
 # Changelog
 
+## [0.15.0] – 2026-04-12
+
+### Changed
+- **Border defaults moved to `Window`** – each control now declares its default
+  border shape via `defaultBorder` in `WindowProperties` instead of overriding
+  `border: wp.border ?? { ... }` in the constructor. `Window` resolves the final
+  border as `wp.border ?? wp.defaultBorder`.
+- **Border color synced automatically** – `Window.render()` calls a private
+  `syncBorderColor()` before painting the border. It updates the border color
+  based on the current `disabled`/`focused` state using `BUILTIN_BORDER_DISABLED`,
+  `BUILTIN_BORDER_FOCUSED`, and `BUILTIN_BORDER`. Controls no longer call
+  `updateBorder({ ..., color })` at the start of every `render()`.
+- **Text style auto-picked in `writeText()`** – when no `style` option is
+  provided, `writeText()` automatically selects `disabledStyleId`, `focusedStyleId`,
+  or `normalStyleId` based on the current control state. Controls only pass an
+  explicit style for non-standard cases (e.g. `checkedStyleId`, `placeholderStyleId`).
+- **`focusedStyleId` promoted to `Window`** – initialized from `BUILTIN_TEXT_FOCUSED`,
+  shared by all interactive controls; per-control `focusedStyleId` fields removed.
+- **`Window` background default changed** – background now defaults to 0
+  (transparent) when not specified in `WindowProperties`; the BUILTIN_WINDOW_BG
+  fallback is the responsibility of each control that needs it.
+
+## [0.14.0] – 2026-04-12
+
+### Changed
+- **Common control properties moved to `Window`** – `focused`, `disabled`,
+  `label`, `normalStyleId`, and `disabledStyleId` fields plus their
+  getters/setters (`setFocused`/`isFocused`, `setDisabled`/`isDisabled`,
+  `setLabel`/`getLabel`) now live in the `Window` base class as protected fields
+  with public accessors. All 14 controls no longer duplicate these declarations.
+- `setDisabled()` automatically calls `setActive(!disabled)` to keep the two
+  flags in sync.
+- Read-only controls (StatusLED, ProgressBar, ProgressBarV, LineChart, BarChart,
+  Sparkline, Spinner) no longer override `isFocused()`/`setFocused()`/`isDisabled()`
+  as no-ops — the inherited `Window` implementation is used instead.
+- Renamed internal style fields for consistency: `TextBox`/`TextArea`
+  `textStyleId` → `normalStyleId`; `Tabs` `normalTextStyleId` → `normalStyleId`,
+  `disabledTextStyleId` → `disabledStyleId`.
+
+## [0.13.0] – 2026-04-12
+
+### Changed
+- **Global StyleRegistry singleton** – eliminated the `registry?: StyleRegistry`
+  parameter from every constructor (`Window`, all 14 controls). Instead, a single
+  `StyleRegistry` is created by the `Screen` constructor and stored in a new
+  module-level singleton (`src/Screen/RegistryHolder.mts`). All windows and
+  controls automatically use that shared registry via `getRegistry()` without any
+  explicit wiring. `InterfaceBuilder` no longer threads a registry argument through
+  its internal `buildNode` helper.
+- `Screen.getStyleRegistry()`, `Screen.registerStyle()`, and
+  `Screen.setBuiltinStyle()` are preserved and now delegate to the singleton.
+- New internal module `RegistryHolder.mts` exports `getRegistry()` /
+  `setRegistry()` – avoids circular imports between `Screen` and `Window`.
+
+## [0.12.0] – 2026-04-12
+
+### Added
+- **Library packaging** – the project now ships as a reusable npm package:
+  - New `src/index.mts` barrel re-exports every public class, type, and
+    built-in style constant (`Screen`, `Window`, `WindowManager`, all 15
+    controls, `InterfaceBuilder`, `Pos`/`Size`/`Pct`/`pct`, all `*Options`
+    interfaces, YAML schema types, `BUILTIN_*` constants)
+  - `package.json` fields for publishing: `exports` map (ESM-only with
+    type-aware conditional exports), `types`, `module`, `files`,
+    `sideEffects: false`, `engines: node >= 18`, `keywords`, `repository`,
+    `bugs`, `homepage`, `license`, `author`, and a `prepublishOnly` script
+    that runs build + tests
+  - `LICENSE` file (MIT)
+- `npm run demo` script – alias for the tsx-based dev command
+
+### Changed
+- **Demo entry point** moved from `src/index.mts` to `src/demo.mts`. The
+  library's `main`/`exports` now point at `dist/index.mjs` (the barrel),
+  so `import { Screen } from 'take4-console'` no longer accidentally runs
+  the demo — **breaking change for anyone importing the old internal
+  index.mts path**
+- `tsconfig.json` excludes `src/demo.mts` from the library build (the demo
+  is tsx-only so `layout.yaml` keeps resolving from `src/` via
+  `import.meta.url`)
+- README rewritten with an **Installation**, **Quick start**, **Public
+  API**, and **Running the bundled demo** section at the top; the
+  existing architecture / custom-control / YAML reference content is kept
+  below with a note that the example imports use relative paths because
+  they target in-repo extension
+
+---
+
+## [0.11.0] – 2026-04-12
+
+### Added
+- **`ListBox`** – scrollable, focusable list of single-line items; supports ↑/↓, Home/End, PgUp/PgDn with automatic scrolling; emits `onChange(index, item)` when the selection moves
+- **`Tabs`** – tabbed container that renders a header row and composites only the children tagged to the active tab; focusable with ←/→ to cycle tabs; new `addChildToTab(tabIndex, child)` API tags children without affecting standard `addChild()` semantics
+- **`Sparkline`** – read-only one-row inline chart built from the eight-level block-character ramp (` ▁▂▃▄▅▆▇█`); supports width/data resampling via linear interpolation
+- **`Spinner`** – read-only animated loader with five built-in frame styles (`braille`, `dots`, `line`, `circle`, `arrow`); advances via `step()` driven by an external clock; supports optional label to the right of the glyph
+- New option interfaces: `ListBoxOptions`, `TabsOptions`, `SparklineOptions`, `SpinnerOptions`
+- Extended `YamlWindowType` with `listbox`, `tabs`, `sparkline`, `spinner`
+- New `YamlWindowDef.tab` field – when the parent is a `Tabs` control, children with a `tab:` field are routed through `addChildToTab()` automatically
+
+### Changed
+- **`LineChart.render()`** – rewrote the plotting pipeline: every plot column now receives an interpolated row via linear interpolation between data samples, and vertical transitions are drawn as self-contained steps (`╯│╭` / `╮│╰`) instead of disjoint per-data-point cells. Fixes the "jagged" / disconnected appearance when plot width exceeds the data-point count. The buggy `selectLineChar` enter/exit lookup table (which had `up`/`down` corner characters swapped) has been removed entirely.
+- **Demo (`index.mts` + `layout.yaml`)** – added a `LIVE` braille spinner to the header, replaced the bottom-right charts panel with a three-tab `Tabs` control (Charts / Trends / Events) showing the original `LineChart`+`BarChart` on tab 0, three stacked `Sparkline` histories on tab 1, and a scrolling `ListBox` event log on tab 2. The timer now advances the spinner, shifts rolling sparkline buffers in sync with the progress bars, and prepends timestamped log entries to the event list.
+
+---
+
+## [0.10.0] – 2026-04-12
+
+### Added
+- **`StatusLED`** – read-only coloured status indicator (states: `ok`/`warn`/`error`/`off`; auto-sizes to label width)
+- **`ProgressBar`** – horizontal progress bar using `█`/`░` block characters with optional centred percentage label
+- **`ProgressBarV`** – vertical progress bar filling from the bottom upward
+- **`LineChart`** – line chart using box-drawing characters (`─`, `│`, `╭`, `╮`, `╯`, `╰`) with Y-axis labels and X-axis
+- **`BarChart`** – vertical bar chart with `█` columns and single-character labels in the bottom row
+- All five controls are read-only (`isFocused()` always `false`) and YAML-compatible via `InterfaceBuilder` using types `statusled`, `progressbar`, `progressbarv`, `linechart`, `barchart`
+- New option interfaces in `types.mts`: `StatusLEDOptions`, `ProgressBarOptions`, `ProgressBarVOptions`, `LineChartOptions`, `BarChartOptions`
+- Extended `YamlWindowType` and `YamlWindowDef` to support the new controls
+
+---
+
+## [0.9.0] – 2026-04-12
+
+### Added
+- **Built-in named style system** – `Screen` pre-registers ten default styles under well-known names; controls look them up by name at render time and fall back to hardcoded defaults if the registry is fresh:
+  - `BUILTIN_WINDOW_BG` (`builtin:window-bg`) – default background for windows and controls
+  - `BUILTIN_BORDER` / `BUILTIN_BORDER_FOCUSED` / `BUILTIN_BORDER_DISABLED` – border foreground colours
+  - `BUILTIN_TEXT` / `BUILTIN_TEXT_FOCUSED` / `BUILTIN_TEXT_DISABLED` / `BUILTIN_TEXT_PLACEHOLDER` / `BUILTIN_TEXT_CHECKED` – text colour variants
+  - `BUILTIN_CURSOR` (`builtin:cursor`) – cursor inverse-highlight style
+- **`StyleRegistry.registerNamed(name, attrs)`** – registers a style under a string name and returns its stable ID
+- **`StyleRegistry.getNamed(name)`** – returns the StyleId associated with a name, or `undefined`
+- **`StyleRegistry.getNamedForeground(name, fallback)`** – convenience helper that resolves the foreground `Color` of a named style (used by controls for border colours)
+- **`Screen.setBuiltinStyle(name, attrs)`** – overrides any named style (built-in or custom) and returns the new ID; controls pick up the change on their next `render()` call
+- **YAML `styles:` section** – `InterfaceBuilder` now parses an optional `styles:` list at the top of the layout document and registers each entry in `StyleRegistry` before building windows:
+  ```yaml
+  styles:
+    - name: my-panel-bg
+      background: 235
+    - name: builtin:border-focused   # override built-in
+      foreground: 214                # amber focused border
+  windows:
+    - background: my-panel-bg
+  ```
+
+### Changed
+- **`WindowOptions.background`** changed from `Color | false` to `StyleId | undefined` — pass a registered StyleId or omit for transparent (0 = no background); **breaking change**
+- **`YamlWindowDef.background`** changed from `Color | false` to `string | number | undefined` — string values are resolved as named style names, numbers are used directly as StyleIds; **breaking change**
+- **`YamlLayout`** now includes an optional `styles?: YamlStyleDef[]` field
+- All controls (`Button`, `TextBox`, `TextArea`, `Checkbox`, `Radio`) now resolve their default colours from the built-in named styles instead of hardcoded ANSI numbers; hardcoded values remain as fallbacks when no Screen registry is present
+
+### Tests
+- `Window.test.mts` — background-option tests updated: register a StyleId via `StyleRegistry` instead of passing a raw color number; added `StyleId 0 background leaves region blank` case
+
+---
+
+## [0.8.0] – 2026-04-11
+
+### Added
+- **`InterfaceBuilder`** (`src/Screen/InterfaceBuilder.mts`) – builds a window hierarchy from a YAML description:
+  - `build(yamlText, screen, wm?)` – parses YAML, adds all top-level windows to Screen, returns `Map<string, Window>` keyed by YAML `id`
+  - `buildFromFile(path, screen, wm?)` – async variant that reads a file first
+  - `registerCallback(id, fn)` – registers a named function for use with `onPress` / `onChange` in YAML
+  - Supports all widget types: `window`, `button`, `textbox`, `textarea`, `checkbox`, `radio`
+  - Position spec: `{x, y}` (absolute / negative edge-relative / `"N%"` percentage), named presets (`center`, `topLeft`, `topRight`, `bottomLeft`, `bottomRight`), edge presets (`{preset: top|left|right|bottom, offset?}`)
+  - Size spec: `{width, height}`, `"fill"`, `{fillWidth: N}`, `{fillHeight: N}`; `checkbox` and `radio` are auto-sized (no `size` needed)
+  - Passes shared `StyleRegistry` from Screen to all created windows
+  - When `wm` is provided, all focusable controls are automatically registered with `WindowManager` after the full tree is built (position resolution happens before registration)
+- YAML schema types added to `types.mts`: `YamlAxisValue`, `YamlPosSpec`, `YamlSizeSpec`, `YamlWindowType`, `YamlWindowDef`, `YamlLayout`
+- `yaml` package added as a runtime dependency
+
+---
+
+## [0.7.0] – 2026-04-11
+
+### Added
+- **`WindowManager`** (`src/Screen/WindowManager.mts`) – application input manager:
+  - Captures raw stdin in TTY raw mode; parses escape sequences and SGR mouse events
+  - `register(control, ...parents)` – registers a focusable control for Tab-cycling; parent chain is used to compute absolute screen position for mouse hit-testing
+  - `unregister(control)` – removes a control from the focus list
+  - `getFocused()` / `setFocus(control)` – read/set current focus
+  - `openDialog(dialog, controls)` – pushes a modal dialog level; the dialog Window is added to Screen and its controls capture all focus until `closeDialog()` is called
+  - `closeDialog()` – pops the topmost dialog, removes it from Screen, and restores previous focus context
+  - `run()` – starts the event loop (raw mode, optional mouse tracking, hides cursor, initial render)
+  - `stop()` – restores terminal state and fires `onExit` callback
+  - Mouse support (SGR protocol): left-click focuses the clicked registered control (`mouse: true` option)
+  - `handleInput(Buffer)` – public method so tests can drive input without a real TTY
+- **`Focusable`** interface (`types.mts`) – `{ isFocused, setFocused, isDisabled, handleKey? }` satisfied by all interactive controls
+- **`TerminalMouseEvent`** interface (`types.mts`) – typed mouse event from the terminal
+- **`WindowManagerOptions`** interface (`types.mts`) – `exitKeys`, `onExit`, `onKey`, `onMouse`, `mouse`
+- **`Button.handleKey(key)`** – Enter or Space activates `onPress` callback
+- **`Checkbox.handleKey(key)`** – Space toggles `checked` and fires `onChange`
+- **`Radio.handleKey(key)`** – Space selects the button and fires `onChange`
+- `onPress?: () => void` added to `ButtonOptions`
+- `onChange?: (checked: boolean) => void` added to `CheckboxOptions` and `RadioOptions`
+- **`Window.removeChild(child)`** – removes a previously added child (used internally by `closeDialog`)
+- Demo (`src/index.mts`) updated to use `WindowManager` with mouse support; press `q` or Ctrl+C to exit
+
+---
+
+## [0.6.0] – 2026-04-11
+
+### Added
+- **`Window.getInnerOffset()`** / **`Window.getInnerSize()`** – public methods returning the content area offset and dimensions after accounting for decorations (borders); used by `writeText`, `addChild`, `blitChild`
+- **`Window.updateBorder()`** – protected method allowing subclasses to change the border config before each `render()` call (e.g. focus-state colour)
+- **`Button`** (`src/Screen/controls/Button.mts`) – clickable button with rounded border, centred label, normal/focused/disabled states
+- **`Checkbox`** (`src/Screen/controls/Checkbox.mts`) – `[✓]/[ ]` toggle; auto-sized to label width; checked/focused/disabled states
+- **`Radio`** (`src/Screen/controls/Radio.mts`) – `(●)/( )` single-selection; auto-sized to label width; checked/focused/disabled states
+- **`TextBox`** (`src/Screen/controls/TextBox.mts`) – single-line text input with scrolling, cursor, placeholder, `handleKey()` for terminal input
+- **`TextArea`** (`src/Screen/controls/TextArea.mts`) – multi-line text input with 2-D cursor, scroll, placeholder, `handleKey()` for terminal input
+- Control option types added to `types.mts`: `ControlOptions`, `ButtonOptions`, `TextBoxOptions`, `TextAreaOptions`, `CheckboxOptions`, `RadioOptions`
+
+### Changed
+- `Window.addChild()` now resolves child sizes and positions relative to the **inner content area** (excludes border cells) — **breaking change** for parents with borders
+- `Window.writeText()` coordinates are now relative to the inner content area; text clips at inner boundaries, not full window edges — **breaking change** for windows with borders
+- `Window.blitChild()` uses inner area dimensions for `Pos.resolve()` and offsets results by inner offset
+
+---
+
+## [0.5.0] – 2026-04-11
+
+### Added
+- **`Pos`** class (`src/Screen/Pos.mts`) – encodes window position with support for:
+  - Absolute coordinates: `new Pos(5, 3)`
+  - From-right/bottom edge (negative): `new Pos(-5, -3)` — own edge at distance from parent edge
+  - Percentage of parent: `new Pos(pct(50), pct(25))`
+  - Named edge presets: `Pos.topLeft()`, `Pos.topRight()`, `Pos.bottomLeft()`, `Pos.bottomRight()`, `Pos.center()`, `Pos.left(y?)`, `Pos.right(y?)`, `Pos.top(x?)`, `Pos.bottom(x?)`
+- **`Size`** class (`src/Screen/Size.mts`) – encodes window dimensions with support for:
+  - Absolute pixels: `new Size(30, 10)`
+  - Percentage of parent: `new Size(pct(50), pct(100))`
+  - Fill shortcuts: `Size.fill()`, `Size.fillWidth(h)`, `Size.fillHeight(w)`
+- **`Pct`** class and **`pct(n)`** helper – wrap percentage values for use in `Pos` and `Size`
+- `AxisSpec` and `DimSpec` type aliases added to `types.mts`
+
+### Changed
+- **`Window` constructor** signature changed from `(x, y, width, height, options?, registry?)` to `(pos: Pos, size: Size, options?, registry?)` — **breaking change**
+- `Window.addChild()` now resolves percentage-based child sizes immediately against parent dimensions
+- `Window` internal `blitChild()` re-resolves position via `Pos.resolve()` on every `render()` call
+
+### Notes
+- For windows with percentage-based sizes, call `parent.addChild(child)` before writing content.
+
+---
+
+## [0.4.0] - 2026-04-11
+
+### Added
+- `StyleRegistry` class (`src/Screen/StyleRegistry.mts`) – central style store with integer IDs and deduplication; `register()`, `get()`, `merge()`
+- `StyleId = number` type alias (`src/Screen/types.mts`)
+- `Screen.registerStyle(attrs): StyleId` – public API for registering styles
+- `Screen.getStyleRegistry(): StyleRegistry` – returns the screen's registry for sharing with child Windows
+- `Window.mergeStyle(x, y, styleId)` – replaces `setAttributes`; merges a style ID onto an existing cell
+
+### Changed
+- `Region` now stores `number[]` (style IDs) instead of `CellAttributes[]`; replaced `getAttrs()` with `getStyleIds()`, `setAttributes()` with `setStyleId()`, `getCell()` removed in favour of `getChar()` + `getStyleId()`
+- `Window.setCell(x, y, char, styleId?)`, `fill(char, styleId?)`, `writeText(text, options?)` all accept `StyleId` instead of `CellAttributes`
+- `WriteTextOptions` no longer extends `CellAttributes`; uses `style?: StyleId` field instead
+- `Window` constructor gains optional `registry?: StyleRegistry` parameter for sharing ID spaces
+- `tsconfig.json` – added `"types": ["node"]` to resolve `process` global
+
+### Removed
+- `Window.setAttributes()` (replaced by `mergeStyle()`)
+- `Region.getAttrs()`, `Region.getCell()`, `Region.setAttributes()`
+
+---
+
+## [0.3.0] - 2026-04-11
+
+### Added
+- `Window.writeText(text, options?)` – built-in text utility; position defaults to (0,0), supports `\n`, silently clips out-of-bounds characters (`src/Screen/Window.mts`)
+- `WriteTextOptions` interface extending `CellAttributes` with optional `x`/`y` (`src/Screen/types.mts`)
+
+### Changed
+- `src/index.mts` – removed local `writeText` helper; all calls use `win.writeText()`
+
+---
+
+## [0.2.0] - 2026-04-11
+
+### Added
+- `Screen` class with terminal cell grid (`src/Screen/Screen.mts`)
+- Type declarations: `Color`, `CellAttributes`, `Cell`, `TerminalSize` (`src/Screen/types.mts`)
+- Methods: `getSize`, `getCell`, `setChar`, `setCell`, `setAttributes`, `clear`, `fill`
+- Unit tests for all `Screen` methods (`src/Screen/Screen.test.mts`)
+
 ## [0.1.0] - 2026-04-11
 
 ### Added
