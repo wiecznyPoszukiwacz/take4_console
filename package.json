@@ -46,12 +46,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/arcymag/take4-console.git"
+    "url": "git+https://github.com/wiecznyPoszukiwacz/take4_console.git"
   },
   "bugs": {
-    "url": "https://github.com/arcymag/take4-console/issues"
+    "url": "https://github.com/wiecznyPoszukiwacz/take4_console/issues"
   },
-  "homepage": "https://github.com/arcymag/take4-console#readme",
+  "homepage": "https://github.com/wiecznyPoszukiwacz/take4_console.git#readme",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build && npm test",
