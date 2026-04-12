@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.15.1] – 2026-04-12
+
+### Fixed
+- Corrected `repository.url` in `package.json` (`take4-console` → `take4_console`).
+
 ## [0.15.0] – 2026-04-12
 
 ### Changed
