@@ -1,9 +1,6 @@
-import type { ProgressBarOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG } from '../types.mjs';
+import type { ProgressBarProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Character used for the filled portion of the bar. */
 const CHAR_FILL  = '█';
@@ -21,27 +18,19 @@ export class ProgressBar extends Window {
 	private emptyStyleId: StyleId;
 	private labelStyleId: StyleId;
 
-	/** Creates a ProgressBar at the given position and size.
+	/** Creates a ProgressBar from window properties and optional control-specific properties.
 	 *  Recommended height: 1 (no border) or 3 (with border).
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: ProgressBarOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: ProgressBarProperties) {
+		super(wp);
 
-		super(pos, size, {
-			background: bgId,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		this.max       = Math.max(1, cp?.max ?? 100);
+		this.value     = Math.max(0, Math.min(cp?.value ?? 0, this.max));
+		this.showLabel = cp?.showLabel ?? true;
 
-		this.max       = Math.max(1, options?.max ?? 100);
-		this.value     = Math.max(0, Math.min(options?.value ?? 0, this.max));
-		this.showLabel = options?.showLabel ?? true;
-
-		this.fillStyleId  = reg.register({ background: options?.fillColor  ?? 75  });
-		this.emptyStyleId = reg.register({ background: options?.emptyColor ?? 237 });
+		const reg = getRegistry();
+		this.fillStyleId  = reg.register({ background: cp?.fillColor  ?? 75  });
+		this.emptyStyleId = reg.register({ background: cp?.emptyColor ?? 237 });
 		this.labelStyleId = reg.register({ foreground: 255, bold: true });
 	}
 
@@ -64,19 +53,6 @@ export class ProgressBar extends Window {
 	/** Returns the maximum value. */
 	public getMax(): number {
 		return this.max;
-	}
-
-	/** ProgressBar is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; ProgressBar cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** ProgressBar cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
 	}
 
 	public override render(): void {

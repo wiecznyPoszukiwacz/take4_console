@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.15.0] – 2026-04-12
+
+### Changed
+- **Border defaults moved to `Window`** – each control now declares its default
+  border shape via `defaultBorder` in `WindowProperties` instead of overriding
+  `border: wp.border ?? { ... }` in the constructor. `Window` resolves the final
+  border as `wp.border ?? wp.defaultBorder`.
+- **Border color synced automatically** – `Window.render()` calls a private
+  `syncBorderColor()` before painting the border. It updates the border color
+  based on the current `disabled`/`focused` state using `BUILTIN_BORDER_DISABLED`,
+  `BUILTIN_BORDER_FOCUSED`, and `BUILTIN_BORDER`. Controls no longer call
+  `updateBorder({ ..., color })` at the start of every `render()`.
+- **Text style auto-picked in `writeText()`** – when no `style` option is
+  provided, `writeText()` automatically selects `disabledStyleId`, `focusedStyleId`,
+  or `normalStyleId` based on the current control state. Controls only pass an
+  explicit style for non-standard cases (e.g. `checkedStyleId`, `placeholderStyleId`).
+- **`focusedStyleId` promoted to `Window`** – initialized from `BUILTIN_TEXT_FOCUSED`,
+  shared by all interactive controls; per-control `focusedStyleId` fields removed.
+- **`Window` background default changed** – background now defaults to 0
+  (transparent) when not specified in `WindowProperties`; the BUILTIN_WINDOW_BG
+  fallback is the responsibility of each control that needs it.
+
+## [0.14.0] – 2026-04-12
+
+### Changed
+- **Common control properties moved to `Window`** – `focused`, `disabled`,
+  `label`, `normalStyleId`, and `disabledStyleId` fields plus their
+  getters/setters (`setFocused`/`isFocused`, `setDisabled`/`isDisabled`,
+  `setLabel`/`getLabel`) now live in the `Window` base class as protected fields
+  with public accessors. All 14 controls no longer duplicate these declarations.
+- `setDisabled()` automatically calls `setActive(!disabled)` to keep the two
+  flags in sync.
+- Read-only controls (StatusLED, ProgressBar, ProgressBarV, LineChart, BarChart,
+  Sparkline, Spinner) no longer override `isFocused()`/`setFocused()`/`isDisabled()`
+  as no-ops — the inherited `Window` implementation is used instead.
+- Renamed internal style fields for consistency: `TextBox`/`TextArea`
+  `textStyleId` → `normalStyleId`; `Tabs` `normalTextStyleId` → `normalStyleId`,
+  `disabledTextStyleId` → `disabledStyleId`.
+
+## [0.13.0] – 2026-04-12
+
+### Changed
+- **Global StyleRegistry singleton** – eliminated the `registry?: StyleRegistry`
+  parameter from every constructor (`Window`, all 14 controls). Instead, a single
+  `StyleRegistry` is created by the `Screen` constructor and stored in a new
+  module-level singleton (`src/Screen/RegistryHolder.mts`). All windows and
+  controls automatically use that shared registry via `getRegistry()` without any
+  explicit wiring. `InterfaceBuilder` no longer threads a registry argument through
+  its internal `buildNode` helper.
+- `Screen.getStyleRegistry()`, `Screen.registerStyle()`, and
+  `Screen.setBuiltinStyle()` are preserved and now delegate to the singleton.
+- New internal module `RegistryHolder.mts` exports `getRegistry()` /
+  `setRegistry()` – avoids circular imports between `Screen` and `Window`.
+
 ## [0.12.0] – 2026-04-12
 
 ### Added

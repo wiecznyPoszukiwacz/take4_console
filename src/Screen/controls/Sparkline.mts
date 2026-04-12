@@ -1,9 +1,6 @@
-import type { SparklineOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG } from '../types.mjs';
+import type { SparklineProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Eight-level block character ramp from empty → full. */
 const RAMP = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const;
@@ -19,25 +16,16 @@ export class Sparkline extends Window {
 
 	private glyphStyleId: StyleId;
 
-	/** Creates a Sparkline at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: SparklineOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
+	/** Creates a Sparkline from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: SparklineProperties) {
+		super(wp);
 
-		super(pos, size, {
-			background: bgId,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		this.data     = cp?.data ?? [];
+		this.minValue = cp?.min;
+		this.maxValue = cp?.max;
 
-		this.data     = options?.data ?? [];
-		this.minValue = options?.min;
-		this.maxValue = options?.max;
-
-		this.glyphStyleId = reg.register({ foreground: options?.color ?? 75 });
+		this.glyphStyleId = getRegistry().register({ foreground: cp?.color ?? 75 });
 	}
 
 	/** Sets the data series. Call render() afterwards. */
@@ -68,19 +56,6 @@ export class Sparkline extends Window {
 	/** Returns the configured maximum value, or undefined if derived from data. */
 	public getMax(): number | undefined {
 		return this.maxValue;
-	}
-
-	/** Sparkline is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; Sparkline cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** Sparkline cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
 	}
 
 	public override render(): void {

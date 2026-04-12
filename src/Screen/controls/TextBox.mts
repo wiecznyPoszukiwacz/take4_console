@@ -1,19 +1,7 @@
-import type { TextBoxOptions, StyleId } from '../types.mjs';
-import {
-	BUILTIN_WINDOW_BG,
-	BUILTIN_BORDER,
-	BUILTIN_BORDER_FOCUSED,
-	BUILTIN_BORDER_DISABLED,
-	BUILTIN_TEXT,
-	BUILTIN_TEXT_DISABLED,
-	BUILTIN_TEXT_PLACEHOLDER,
-	BUILTIN_CURSOR,
-} from '../types.mjs';
-// Note: BUILTIN_TEXT_FOCUSED is not imported – TextBox has no focused-text style, only focused-border.
+import type { TextBoxProperties, WindowProperties, StyleId } from '../types.mjs';
+import { BUILTIN_TEXT_PLACEHOLDER, BUILTIN_CURSOR } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** A single-line text-input widget with scrolling, cursor display, and placeholder support.
  *  Wraps content area inside a single-line border (total height 3 by default).
@@ -23,46 +11,27 @@ export class TextBox extends Window {
 	private cursor: number;
 	private scrollOffset: number;
 	private placeholder: string;
-	private focused: boolean;
-	private disabled: boolean;
-	private textStyleId: StyleId;
 	private placeholderStyleId: StyleId;
 	private cursorStyleId: StyleId;
-	private disabledStyleId: StyleId;
 
-	/** Creates a TextBox at the given position and size (recommended height: 3 for single border).
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: TextBoxOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
-		const borderColor = options?.disabled
-			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: reg.getNamedForeground(BUILTIN_BORDER, 240);
-		super(pos, size, {
-			background: bgId,
-			border: {
-				top: true, right: true, bottom: true, left: true,
-				style: 'single',
-				color: borderColor,
-			},
-			active: !(options?.disabled ?? false),
-		}, reg);
+	/** Creates a TextBox from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: TextBoxProperties) {
+		super({
+			...wp,
+			defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'single' },
+		});
 
-		this.value       = options?.value       ?? '';
-		this.placeholder = options?.placeholder ?? '';
-		this.focused     = options?.focused      ?? false;
-		this.disabled    = options?.disabled     ?? false;
+		this.value       = cp?.value       ?? '';
+		this.placeholder = cp?.placeholder ?? '';
 		this.scrollOffset = 0;
-		this.cursor      = options?.cursor !== undefined
-			? Math.max(0, Math.min(options.cursor, this.value.length))
+		this.cursor      = cp?.cursor !== undefined
+			? Math.max(0, Math.min(cp.cursor, this.value.length))
 			: this.value.length;
 
-		this.textStyleId        = reg.getNamed(BUILTIN_TEXT)             ?? reg.register({ foreground: 252 });
-		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER) ?? reg.register({ foreground: 242, italic: true });
-		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)           ?? reg.register({ inverse: true });
-		this.disabledStyleId    = reg.getNamed(BUILTIN_TEXT_DISABLED)    ?? reg.register({ foreground: 245, dim: true });
+		const reg = getRegistry();
+		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER)!;
+		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)!;
 
 		this.clampScroll();
 	}
@@ -88,27 +57,6 @@ export class TextBox extends Window {
 	/** Returns the current cursor character index. */
 	public getCursor(): number {
 		return this.cursor;
-	}
-
-	/** Sets the focused state; affects border colour and cursor visibility on next render(). */
-	public setFocused(focused: boolean): void {
-		this.focused = focused;
-	}
-
-	/** Returns whether the TextBox currently has focus. */
-	public isFocused(): boolean {
-		return this.focused;
-	}
-
-	/** Sets the disabled state; dims the control on next render(). */
-	public setDisabled(disabled: boolean): void {
-		this.disabled = disabled;
-		this.setActive(!disabled);
-	}
-
-	/** Returns whether the TextBox is currently disabled. */
-	public isDisabled(): boolean {
-		return this.disabled;
 	}
 
 	/** Processes a key string from the terminal input loop and updates value/cursor.
@@ -151,31 +99,19 @@ export class TextBox extends Window {
 		this.clampScroll();
 	}
 
-	/** Rebuilds the TextBox: updates border colour, renders text or placeholder, draws cursor. */
+	/** Rebuilds the TextBox: renders text or placeholder, draws cursor. */
 	public override render(): void {
 		this.clear();
 
-		const borderColor = this.disabled
-			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: this.focused
-				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-		this.updateBorder({
-			top: true, right: true, bottom: true, left: true,
-			style: 'single',
-			color: borderColor,
-		});
-
 		const { width } = this.getInnerSize();
 		const isEmpty   = this.value === '';
-		const textStyle = this.disabled ? this.disabledStyleId : this.textStyleId;
-		const phStyle   = this.disabled ? this.disabledStyleId : this.placeholderStyleId;
+		const phStyle   = this.disabled ? undefined : this.placeholderStyleId;
 
 		if (isEmpty && !this.focused && this.placeholder !== '') {
 			this.writeText(this.placeholder.slice(0, width), { style: phStyle });
 		} else if (!isEmpty) {
 			const visible = this.value.slice(this.scrollOffset, this.scrollOffset + width);
-			this.writeText(visible, { style: textStyle });
+			this.writeText(visible, { style: this.disabled ? undefined : this.normalStyleId });
 		}
 
 		// Draw cursor when focused.
@@ -183,7 +119,7 @@ export class TextBox extends Window {
 			const cursorX = this.cursor - this.scrollOffset;
 			if (cursorX >= 0 && cursorX < width) {
 				const cursorChar  = this.value[this.cursor] ?? ' ';
-				const cursorStyle = this.registry.merge(textStyle, this.cursorStyleId);
+				const cursorStyle = this.registry.merge(this.normalStyleId, this.cursorStyleId);
 				this.writeText(cursorChar, { x: cursorX, y: 0, style: cursorStyle });
 			}
 		}

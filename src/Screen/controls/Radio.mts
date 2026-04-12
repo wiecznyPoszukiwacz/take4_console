@@ -1,51 +1,32 @@
-import type { RadioOptions, StyleId } from '../types.mjs';
-import {
-	BUILTIN_TEXT,
-	BUILTIN_TEXT_FOCUSED,
-	BUILTIN_TEXT_DISABLED,
-	BUILTIN_TEXT_CHECKED,
-} from '../types.mjs';
+import type { RadioProperties, WindowProperties, StyleId } from '../types.mjs';
+import { BUILTIN_TEXT_CHECKED } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Width of the indicator prefix: `(●) ` = 4 columns. */
 const INDICATOR_WIDTH = 4;
 
 /** A single-selection radio control rendering `(●) label` (selected) or `( ) label` (unselected).
- *  Width is derived automatically from the label length.
+ *  Width is derived automatically from the label length when size is not provided.
  *  Group management (ensuring at most one is selected) is the caller's responsibility. */
 export class Radio extends Window {
-	private label: string;
 	private checked: boolean;
-	private focused: boolean;
-	private disabled: boolean;
 	private onChange?: (checked: boolean) => void;
-	private normalStyleId: StyleId;
-	private focusedStyleId: StyleId;
 	private checkedStyleId: StyleId;
-	private disabledStyleId: StyleId;
 
-	/** Creates a Radio button at the given position. Width is computed from the label automatically.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, label: string, options?: RadioOptions, registry?: StyleRegistry) {
-		const reg = registry ?? new StyleRegistry();
-		super(pos, new Size(INDICATOR_WIDTH + label.length, 1), {
-			background: options?.background,
-			active: !(options?.disabled ?? false),
-		}, reg);
+	/** Creates a Radio button from window properties and optional control-specific properties.
+	 *  When wp.size is omitted, width is computed from wp.label automatically.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: RadioProperties) {
+		const label = wp.label ?? '';
+		const size  = wp.size ?? new Size(INDICATOR_WIDTH + label.length, 1);
+		super({ ...wp, size });
 
-		this.label    = label;
-		this.checked  = options?.checked  ?? false;
-		this.focused  = options?.focused  ?? false;
-		this.disabled = options?.disabled ?? false;
-		this.onChange = options?.onChange;
+		this.checked  = cp?.checked  ?? false;
+		this.onChange = cp?.onChange;
 
-		this.normalStyleId   = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
-		this.focusedStyleId  = reg.getNamed(BUILTIN_TEXT_FOCUSED)  ?? reg.register({ foreground: 255, bold: true });
-		this.checkedStyleId  = reg.getNamed(BUILTIN_TEXT_CHECKED)  ?? reg.register({ foreground: 75, bold: true });
-		this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
+		this.checkedStyleId = getRegistry().getNamed(BUILTIN_TEXT_CHECKED)!;
 	}
 
 	/** Sets the selected state. */
@@ -56,27 +37,6 @@ export class Radio extends Window {
 	/** Returns the current selected state. */
 	public isChecked(): boolean {
 		return this.checked;
-	}
-
-	/** Sets the focused state; affects label style on next render(). */
-	public setFocused(focused: boolean): void {
-		this.focused = focused;
-	}
-
-	/** Returns whether the radio button currently has focus. */
-	public isFocused(): boolean {
-		return this.focused;
-	}
-
-	/** Sets the disabled state; dims the control on next render(). */
-	public setDisabled(disabled: boolean): void {
-		this.disabled = disabled;
-		this.setActive(!disabled);
-	}
-
-	/** Returns whether the radio button is currently disabled. */
-	public isDisabled(): boolean {
-		return this.disabled;
 	}
 
 	/** Processes a key press; Space selects this radio button and fires onChange. */
@@ -92,18 +52,14 @@ export class Radio extends Window {
 	public override render(): void {
 		this.clear();
 
-		const indicator = this.checked ? '(●)' : '( )';
-
-		const indicatorStyle = this.disabled ? this.disabledStyleId
-		                     : this.checked  ? this.checkedStyleId
-		                     : this.normalStyleId;
-		const labelStyle     = this.disabled ? this.disabledStyleId
-		                     : this.focused  ? this.focusedStyleId
-		                     : this.normalStyleId;
+		const indicator      = this.checked ? '(●)' : '( )';
+		// For indicator: use checkedStyleId when checked (and not disabled); auto-pick otherwise.
+		const indicatorStyle = (!this.disabled && this.checked) ? this.checkedStyleId : undefined;
 
 		// Write indicator (first 3 chars) and label separately to allow distinct colouring.
+		// Label uses auto-style (disabled/focused/normal via writeText).
 		this.writeText(indicator, { style: indicatorStyle });
-		this.writeText(` ${this.label}`, { x: INDICATOR_WIDTH - 1, style: labelStyle });
+		this.writeText(` ${this.label}`, { x: INDICATOR_WIDTH - 1 });
 
 		super.render();
 	}

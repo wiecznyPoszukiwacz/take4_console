@@ -1,16 +1,6 @@
-import type { ListBoxOptions, StyleId } from '../types.mjs';
-import {
-	BUILTIN_WINDOW_BG,
-	BUILTIN_BORDER,
-	BUILTIN_BORDER_FOCUSED,
-	BUILTIN_BORDER_DISABLED,
-	BUILTIN_TEXT,
-	BUILTIN_TEXT_DISABLED,
-} from '../types.mjs';
+import type { ListBoxProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** A scrollable list of single-line items. The selected item is highlighted and may
  *  be moved with arrow keys, PgUp/PgDn, and Home/End. Emits onChange whenever the
@@ -20,46 +10,25 @@ export class ListBox extends Window {
 	private items: string[];
 	private selectedIndex: number;
 	private scrollTop: number;
-	private focused: boolean;
-	private disabled: boolean;
 	private onChange?: (index: number, item: string) => void;
-
-	private normalStyleId:    StyleId;
 	private selectedStyleId:  StyleId;
 	private focusedSelStyle:  StyleId;
-	private disabledStyleId:  StyleId;
 
-	/** Creates a ListBox at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: ListBoxOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
-		const borderColor = options?.disabled
-			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: reg.getNamedForeground(BUILTIN_BORDER, 240);
+	/** Creates a ListBox from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: ListBoxProperties) {
+		super({
+			...wp,
+			defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'single' },
+		});
 
-		super(pos, size, {
-			background: bgId,
-			border: {
-				top: true, right: true, bottom: true, left: true,
-				style: 'single',
-				color: borderColor,
-			},
-			active: !(options?.disabled ?? false),
-		}, reg);
-
-		this.items         = options?.items ?? [];
-		this.focused       = options?.focused  ?? false;
-		this.disabled      = options?.disabled ?? false;
-		this.onChange      = options?.onChange;
+		this.items         = cp?.items ?? [];
+		this.onChange      = cp?.onChange;
 		this.scrollTop     = 0;
-		this.selectedIndex = options?.selectedIndex ?? (this.items.length > 0 ? 0 : -1);
+		this.selectedIndex = cp?.selectedIndex ?? (this.items.length > 0 ? 0 : -1);
 
-		this.normalStyleId   = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
-		this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
 		// Selected row: muted highlight when unfocused, bright inverse when focused.
+		const reg = getRegistry();
 		this.selectedStyleId = reg.register({ background: 238, foreground: 252 });
 		this.focusedSelStyle = reg.register({ background: 75, foreground: 231, bold: true });
 	}
@@ -95,27 +64,6 @@ export class ListBox extends Window {
 	public getSelectedItem(): string | undefined {
 		if (this.selectedIndex < 0 || this.selectedIndex >= this.items.length) return undefined;
 		return this.items[this.selectedIndex];
-	}
-
-	/** Sets the focused state; affects border colour and selection row style on next render(). */
-	public setFocused(focused: boolean): void {
-		this.focused = focused;
-	}
-
-	/** Returns whether the ListBox currently has focus. */
-	public isFocused(): boolean {
-		return this.focused;
-	}
-
-	/** Sets the disabled state; dims the control on next render(). */
-	public setDisabled(disabled: boolean): void {
-		this.disabled = disabled;
-		this.setActive(!disabled);
-	}
-
-	/** Returns whether the ListBox is currently disabled. */
-	public isDisabled(): boolean {
-		return this.disabled;
 	}
 
 	/** Processes a key press: arrow keys, Home/End, PgUp/PgDn move the selection. */
@@ -169,20 +117,9 @@ export class ListBox extends Window {
 		this.scrollTop  = Math.max(0, Math.min(maxScroll, this.scrollTop));
 	}
 
-	/** Rebuilds the list: updates border colour, renders visible rows with styles. */
+	/** Rebuilds the list: renders visible rows with styles. */
 	public override render(): void {
 		this.clear();
-
-		const borderColor = this.disabled
-			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: this.focused
-				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-		this.updateBorder({
-			top: true, right: true, bottom: true, left: true,
-			style: 'single',
-			color: borderColor,
-		});
 
 		const { width, height } = this.getInnerSize();
 		if (width < 1 || height < 1) {

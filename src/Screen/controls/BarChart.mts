@@ -1,9 +1,6 @@
-import type { BarChartOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG } from '../types.mjs';
+import type { BarChartProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Character used for bar cells. */
 const CHAR_BAR = '█';
@@ -19,26 +16,18 @@ export class BarChart extends Window {
 	private barStyleId:   StyleId;
 	private labelStyleId: StyleId;
 
-	/** Creates a BarChart at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: BarChartOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
+	/** Creates a BarChart from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: BarChartProperties) {
+		super(wp);
 
-		super(pos, size, {
-			background: bgId,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		this.data     = cp?.data    ?? [];
+		this.labels   = cp?.labels  ?? [];
+		this.max      = cp?.max;
+		this.barWidth = Math.max(1, cp?.barWidth ?? 1);
 
-		this.data     = options?.data    ?? [];
-		this.labels   = options?.labels  ?? [];
-		this.max      = options?.max;
-		this.barWidth = Math.max(1, options?.barWidth ?? 1);
-
-		this.barStyleId   = reg.register({ foreground: options?.barColor ?? 75 });
+		const reg = getRegistry();
+		this.barStyleId   = reg.register({ foreground: cp?.barColor ?? 75 });
 		this.labelStyleId = reg.register({ foreground: 245 });
 	}
 
@@ -70,19 +59,6 @@ export class BarChart extends Window {
 	/** Returns the configured maximum Y value, or undefined if derived from data. */
 	public getMax(): number | undefined {
 		return this.max;
-	}
-
-	/** BarChart is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; BarChart cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** BarChart cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
 	}
 
 	public override render(): void {

@@ -7,58 +7,58 @@ describe('LineChart', () => {
 	// ── Constructor / state ─────────────────────────────────────────────────────
 
 	it('defaults to empty data', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		expect(lc.getData()).toEqual([]);
 	});
 
 	it('setData / getData round-trip', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		lc.setData([1, 2, 3]);
 		expect(lc.getData()).toEqual([1, 2, 3]);
 	});
 
 	it('setMin / getMin round-trip', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		lc.setMin(5);
 		expect(lc.getMin()).toBe(5);
 	});
 
 	it('setMax / getMax round-trip', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		lc.setMax(50);
 		expect(lc.getMax()).toBe(50);
 	});
 
 	it('getMin returns undefined by default', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		expect(lc.getMin()).toBeUndefined();
 	});
 
 	it('isFocused always returns false', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		expect(lc.isFocused()).toBe(false);
 	});
 
 	it('isDisabled always returns false', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		expect(lc.isDisabled()).toBe(false);
 	});
 
 	// ── render() ───────────────────────────────────────────────────────────────
 
 	it('does not crash with empty data', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8));
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) });
 		expect(() => lc.render()).not.toThrow();
 	});
 
 	it('does not crash with a single data point', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [5] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [5] });
 		expect(() => lc.render()).not.toThrow();
 	});
 
 	it('flat series renders horizontal dash chars on the line row', () => {
 		// All values identical → flat line at the middle row
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [5, 5, 5, 5] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [5, 5, 5, 5] });
 		lc.render();
 		const { width, height } = lc.getInnerSize();
 		const { x: ox, y: oy } = lc.getInnerOffset();
@@ -77,7 +77,7 @@ describe('LineChart', () => {
 	});
 
 	it('X-axis row contains "─" and "┼" characters', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [1, 2, 3] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [1, 2, 3] });
 		lc.render();
 		const { width, height } = lc.getInnerSize();
 		const { x: ox, y: oy } = lc.getInnerOffset();
@@ -88,7 +88,7 @@ describe('LineChart', () => {
 	});
 
 	it('Y-axis column contains "┤" at label positions', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [0, 50, 100] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [0, 50, 100] });
 		lc.render();
 		const { width, height } = lc.getInnerSize();
 		const { x: ox, y: oy } = lc.getInnerOffset();
@@ -106,7 +106,7 @@ describe('LineChart', () => {
 
 	it('ascending series contains corner chars ╭ or ╯', () => {
 		// Two points: 0 → 100 — line goes up
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [0, 100] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [0, 100] });
 		lc.render();
 		const { width, height } = lc.getInnerSize();
 		const { x: ox, y: oy } = lc.getInnerOffset();
@@ -118,7 +118,7 @@ describe('LineChart', () => {
 	});
 
 	it('line cells have the default colour (75)', () => {
-		const lc = new LineChart(new Pos(0, 0), new Size(20, 8), { data: [5, 5, 5] });
+		const lc = new LineChart({ pos: new Pos(0, 0), size: new Size(20, 8) }, { data: [5, 5, 5] });
 		lc.render();
 		const { width, height } = lc.getInnerSize();
 		const { x: ox, y: oy } = lc.getInnerOffset();

@@ -1,9 +1,6 @@
-import type { ProgressBarVOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG } from '../types.mjs';
+import type { ProgressBarVProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Character used for the filled portion of the bar. */
 const CHAR_FILL  = '█';
@@ -18,25 +15,17 @@ export class ProgressBarV extends Window {
 	private fillStyleId:  StyleId;
 	private emptyStyleId: StyleId;
 
-	/** Creates a ProgressBarV at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: ProgressBarVOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
+	/** Creates a ProgressBarV from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: ProgressBarVProperties) {
+		super(wp);
 
-		super(pos, size, {
-			background: bgId,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		this.max   = Math.max(1, cp?.max ?? 100);
+		this.value = Math.max(0, Math.min(cp?.value ?? 0, this.max));
 
-		this.max   = Math.max(1, options?.max ?? 100);
-		this.value = Math.max(0, Math.min(options?.value ?? 0, this.max));
-
-		this.fillStyleId  = reg.register({ background: options?.fillColor  ?? 75  });
-		this.emptyStyleId = reg.register({ background: options?.emptyColor ?? 237 });
+		const reg = getRegistry();
+		this.fillStyleId  = reg.register({ background: cp?.fillColor  ?? 75  });
+		this.emptyStyleId = reg.register({ background: cp?.emptyColor ?? 237 });
 	}
 
 	/** Sets the current value (clamped to 0–max). Call render() afterwards. */
@@ -58,19 +47,6 @@ export class ProgressBarV extends Window {
 	/** Returns the maximum value. */
 	public getMax(): number {
 		return this.max;
-	}
-
-	/** ProgressBarV is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; ProgressBarV cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** ProgressBarV cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
 	}
 
 	public override render(): void {

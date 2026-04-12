@@ -1,3 +1,6 @@
+import type { Pos } from './Pos.mjs';
+import type { Size } from './Size.mjs';
+
 /** Text and background color, expressed as ANSI color number (0–255) or hex string (e.g. '#ff0000'). */
 export type Color = number | string;
 
@@ -69,14 +72,26 @@ export interface WindowBorder {
   color?:  Color;
 }
 
-/** Window visual options passed to the constructor. */
-export interface WindowOptions {
+/** Common properties shared by Window and all controls. Passed as the first constructor parameter. */
+export interface WindowProperties {
+  /** Position of the window within its parent. */
+  pos: Pos;
+  /** Dimensions of the window. Optional for auto-sized controls (Checkbox, Radio, StatusLED, Spinner). */
+  size?: Size;
   /** Background style ID registered in a StyleRegistry. 0 or undefined = transparent. Default: undefined. */
   background?: StyleId;
   /** Border config, or true for all sides with single style. Default: false. */
   border?: WindowBorder | boolean;
+  /** Default border shape used when the user does not supply border. Set by control subclasses. */
+  defaultBorder?: WindowBorder | boolean;
   /** Whether the window is active. Affects border/background appearance. Default: true. */
   active?: boolean;
+  /** Whether the control currently has keyboard focus. Default: false. */
+  focused?: boolean;
+  /** Whether the control is non-interactive and visually dimmed. Default: false. */
+  disabled?: boolean;
+  /** Text label displayed by the control. Default: ''. */
+  label?: string;
 }
 
 /** Internal per-axis position spec used by Pos. */
@@ -101,24 +116,14 @@ export interface WriteTextOptions {
   style?: StyleId;
 }
 
-/** Options shared by all interactive controls. */
-export interface ControlOptions extends WindowOptions {
-  /** Whether the control currently has keyboard focus. Default: false. */
-  focused?: boolean;
-  /** Whether the control is non-interactive and visually dimmed. Default: false. */
-  disabled?: boolean;
-}
-
-/** Options for the Button control. */
-export interface ButtonOptions extends ControlOptions {
-  /** Text label displayed centred on the button. Default: ''. */
-  label?: string;
+/** Control-specific properties for the Button control. */
+export interface ButtonProperties {
   /** Called when the button is activated (Enter or Space while focused). */
   onPress?: () => void;
 }
 
-/** Options for the TextBox control. */
-export interface TextBoxOptions extends ControlOptions {
+/** Control-specific properties for the TextBox control. */
+export interface TextBoxProperties {
   /** Initial text value. Default: ''. */
   value?: string;
   /** Placeholder shown when value is empty and the control is not focused. Default: ''. */
@@ -127,8 +132,8 @@ export interface TextBoxOptions extends ControlOptions {
   cursor?: number;
 }
 
-/** Options for the TextArea control. */
-export interface TextAreaOptions extends ControlOptions {
+/** Control-specific properties for the TextArea control. */
+export interface TextAreaProperties {
   /** Initial text value; may contain newline characters. Default: ''. */
   value?: string;
   /** Placeholder shown when value is empty and the control is not focused. Default: ''. */
@@ -137,32 +142,30 @@ export interface TextAreaOptions extends ControlOptions {
   cursor?: { x: number; y: number };
 }
 
-/** Options for the Checkbox control. */
-export interface CheckboxOptions extends ControlOptions {
+/** Control-specific properties for the Checkbox control. */
+export interface CheckboxProperties {
   /** Whether the checkbox is initially checked. Default: false. */
   checked?: boolean;
   /** Called when the checked state changes via handleKey(). */
   onChange?: (checked: boolean) => void;
 }
 
-/** Options for the Radio control. */
-export interface RadioOptions extends ControlOptions {
+/** Control-specific properties for the Radio control. */
+export interface RadioProperties {
   /** Whether the radio button is initially selected. Default: false. */
   checked?: boolean;
   /** Called when the radio button is selected via handleKey(). */
   onChange?: (checked: boolean) => void;
 }
 
-/** Options for the StatusLED control. */
-export interface StatusLEDOptions extends WindowOptions {
+/** Control-specific properties for the StatusLED control. */
+export interface StatusLEDProperties {
   /** Visual state of the LED. Default: 'off'. */
   state?: 'ok' | 'warn' | 'error' | 'off';
-  /** Label text shown to the right of the indicator dot. Default: ''. */
-  label?: string;
 }
 
-/** Options for the ProgressBar (horizontal) control. */
-export interface ProgressBarOptions extends WindowOptions {
+/** Control-specific properties for the ProgressBar (horizontal) control. */
+export interface ProgressBarProperties {
   /** Current value. Default: 0. */
   value?: number;
   /** Maximum value. Default: 100. */
@@ -175,8 +178,8 @@ export interface ProgressBarOptions extends WindowOptions {
   emptyColor?: number;
 }
 
-/** Options for the ProgressBarV (vertical) control. */
-export interface ProgressBarVOptions extends WindowOptions {
+/** Control-specific properties for the ProgressBarV (vertical) control. */
+export interface ProgressBarVProperties {
   /** Current value. Default: 0. */
   value?: number;
   /** Maximum value. Default: 100. */
@@ -187,8 +190,8 @@ export interface ProgressBarVOptions extends WindowOptions {
   emptyColor?: number;
 }
 
-/** Options for the LineChart control. */
-export interface LineChartOptions extends WindowOptions {
+/** Control-specific properties for the LineChart control. */
+export interface LineChartProperties {
   /** Data points to plot. Default: []. */
   data?: number[];
   /** Minimum Y value; if omitted, derived from data. */
@@ -199,8 +202,8 @@ export interface LineChartOptions extends WindowOptions {
   color?: number;
 }
 
-/** Options for the ListBox control. */
-export interface ListBoxOptions extends ControlOptions {
+/** Control-specific properties for the ListBox control. */
+export interface ListBoxProperties {
   /** Initial items shown in the list. Default: []. */
   items?: string[];
   /** Initial selected index, or -1 for no selection. Default: 0 if items is non-empty, else -1. */
@@ -209,8 +212,8 @@ export interface ListBoxOptions extends ControlOptions {
   onChange?: (index: number, item: string) => void;
 }
 
-/** Options for the Tabs control. */
-export interface TabsOptions extends ControlOptions {
+/** Control-specific properties for the Tabs control. */
+export interface TabsProperties {
   /** Tab titles shown in the header row. Default: []. */
   titles?: string[];
   /** Initially active tab index. Default: 0. */
@@ -219,8 +222,8 @@ export interface TabsOptions extends ControlOptions {
   onChange?: (index: number, title: string) => void;
 }
 
-/** Options for the Sparkline control. */
-export interface SparklineOptions extends WindowOptions {
+/** Control-specific properties for the Sparkline control. */
+export interface SparklineProperties {
   /** Data values to plot as a one-row block-character chart. Default: []. */
   data?: number[];
   /** Minimum Y value; if omitted, derived from data. */
@@ -231,12 +234,10 @@ export interface SparklineOptions extends WindowOptions {
   color?: number;
 }
 
-/** Options for the Spinner control. */
-export interface SpinnerOptions extends WindowOptions {
+/** Control-specific properties for the Spinner control. */
+export interface SpinnerProperties {
   /** Visual style of the spinner animation. Default: 'braille'. */
   style?: 'braille' | 'dots' | 'line' | 'circle' | 'arrow';
-  /** Label text shown to the right of the spinner glyph. Default: ''. */
-  label?: string;
   /** Initial frame index. Default: 0. */
   frame?: number;
   /** Whether the spinner is actively animating. Default: true. */
@@ -245,8 +246,8 @@ export interface SpinnerOptions extends WindowOptions {
   color?: number;
 }
 
-/** Options for the BarChart control. */
-export interface BarChartOptions extends WindowOptions {
+/** Control-specific properties for the BarChart control. */
+export interface BarChartProperties {
   /** Data values for each bar. Default: []. */
   data?: number[];
   /** Label string for each bar (truncated to barWidth columns). Default: []. */

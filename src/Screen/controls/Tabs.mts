@@ -1,17 +1,6 @@
-import type { TabsOptions, StyleId } from '../types.mjs';
-import {
-	BUILTIN_WINDOW_BG,
-	BUILTIN_BORDER,
-	BUILTIN_BORDER_FOCUSED,
-	BUILTIN_BORDER_DISABLED,
-	BUILTIN_TEXT,
-	BUILTIN_TEXT_FOCUSED,
-	BUILTIN_TEXT_DISABLED,
-} from '../types.mjs';
+import type { TabsProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** A tabbed container. Renders a header row with tab titles and shows only the
  *  children associated with the active tab index. Other children added via the
@@ -23,53 +12,29 @@ import { StyleRegistry } from '../StyleRegistry.mjs';
 export class Tabs extends Window {
 	private titles: string[];
 	private activeIndex: number;
-	private focused: boolean;
-	private disabled: boolean;
 	private onChange?: (index: number, title: string) => void;
 	/** Maps each tagged child to its tab index. Untagged children are always visible. */
 	private childTab: Map<Window, number>;
+	private activeTextStyleId: StyleId;
+	private separatorStyleId: StyleId;
 
-	private normalTextStyleId:   StyleId;
-	private activeTextStyleId:   StyleId;
-	private focusedActiveStyleId: StyleId;
-	private disabledTextStyleId: StyleId;
-	private separatorStyleId:    StyleId;
+	/** Creates a Tabs control from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: TabsProperties) {
+		super({
+			...wp,
+			defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'single' },
+		});
 
-	/** Creates a Tabs control at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: TabsOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
-		const borderColor = options?.disabled
-			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: reg.getNamedForeground(BUILTIN_BORDER, 240);
-
-		super(pos, size, {
-			background: bgId,
-			border: {
-				top: true, right: true, bottom: true, left: true,
-				style: 'single',
-				color: borderColor,
-			},
-			active: !(options?.disabled ?? false),
-		}, reg);
-
-		this.titles      = options?.titles ?? [];
-		this.activeIndex = Math.max(0, Math.min(this.titles.length - 1, options?.activeIndex ?? 0));
-		this.focused     = options?.focused  ?? false;
-		this.disabled    = options?.disabled ?? false;
-		this.onChange    = options?.onChange;
+		this.titles      = cp?.titles ?? [];
+		this.activeIndex = Math.max(0, Math.min(this.titles.length - 1, cp?.activeIndex ?? 0));
+		this.onChange    = cp?.onChange;
 		this.childTab    = new Map();
 
-		this.normalTextStyleId    = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
-		this.disabledTextStyleId  = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
-		// Active tab: inverse highlight; brighter when focused.
-		this.activeTextStyleId    = reg.register({ background: 238, foreground: 255, bold: true });
-		this.focusedActiveStyleId = reg.getNamed(BUILTIN_TEXT_FOCUSED)
-			?? reg.register({ background: 75, foreground: 231, bold: true });
-		this.separatorStyleId     = reg.register({ foreground: 240 });
+		// Active tab: inverse highlight; brighter when focused (uses Window.focusedStyleId).
+		const reg = getRegistry();
+		this.activeTextStyleId = reg.register({ background: 238, foreground: 255, bold: true });
+		this.separatorStyleId  = reg.register({ foreground: 240 });
 	}
 
 	/** Adds a child window and associates it with the given tab index. Children
@@ -108,27 +73,6 @@ export class Tabs extends Window {
 		return this.activeIndex;
 	}
 
-	/** Sets the focused state; affects border colour and active-tab highlight on next render(). */
-	public setFocused(focused: boolean): void {
-		this.focused = focused;
-	}
-
-	/** Returns whether the Tabs currently has focus. */
-	public isFocused(): boolean {
-		return this.focused;
-	}
-
-	/** Sets the disabled state; dims the control on next render(). */
-	public setDisabled(disabled: boolean): void {
-		this.disabled = disabled;
-		this.setActive(!disabled);
-	}
-
-	/** Returns whether the Tabs is currently disabled. */
-	public isDisabled(): boolean {
-		return this.disabled;
-	}
-
 	/** Processes a key press; Left/Right arrows cycle through tabs (no wrap-around). */
 	public handleKey(key: string): void {
 		if (this.disabled || this.titles.length === 0) return;
@@ -139,20 +83,10 @@ export class Tabs extends Window {
 		}
 	}
 
-	/** Rebuilds the tabs: updates border, draws header row, composites only the active tab's children.
+	/** Rebuilds the tabs: draws header row, composites only the active tab's children.
 	 *  Note: content is NOT cleared on each render, so user-written decorations (e.g. sparkline
 	 *  labels placed via writeText) survive across frames. The header row is fully overwritten. */
 	public override render(): void {
-		const borderColor = this.disabled
-			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: this.focused
-				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-		this.updateBorder({
-			top: true, right: true, bottom: true, left: true,
-			style: 'single',
-			color: borderColor,
-		});
 
 		this.drawHeader();
 
@@ -176,8 +110,7 @@ export class Tabs extends Window {
 		if (width < 1) return;
 
 		// Blank the full header row first so stale cells from previous renders disappear.
-		const defaultStyle = this.disabled ? this.disabledTextStyleId : this.normalTextStyleId;
-		this.writeText(' '.repeat(width), { x: 0, y: 0, style: defaultStyle });
+		this.writeText(' '.repeat(width), { x: 0, y: 0 });
 
 		if (this.titles.length === 0) return;
 
@@ -189,10 +122,10 @@ export class Tabs extends Window {
 			const padded   = ` ${title} `;
 			const isActive = i === this.activeIndex;
 			const style: StyleId = this.disabled
-				? this.disabledTextStyleId
+				? this.disabledStyleId
 				: isActive
-					? (this.focused ? this.focusedActiveStyleId : this.activeTextStyleId)
-					: this.normalTextStyleId;
+					? (this.focused ? this.focusedStyleId : this.activeTextStyleId)
+					: this.normalStyleId;
 
 			const visible = padded.slice(0, width - x);
 			this.writeText(visible, { x, y: 0, style });

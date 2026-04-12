@@ -23,19 +23,19 @@ function makeScreen(): Screen {
 }
 
 function makeButton(label = 'OK'): Button {
-	return new Button(new Pos(0, 0), new Size(10, 3), { label });
+	return new Button({ pos: new Pos(0, 0), size: new Size(10, 3), label });
 }
 
 function makeCheckbox(label = 'opt', checked = false): Checkbox {
-	return new Checkbox(new Pos(0, 0), label, { checked });
+	return new Checkbox({ pos: new Pos(0, 0), label }, { checked });
 }
 
 function makeRadio(label = 'opt', checked = false): Radio {
-	return new Radio(new Pos(0, 0), label, { checked });
+	return new Radio({ pos: new Pos(0, 0), label }, { checked });
 }
 
 function makeTextBox(value = ''): TextBox {
-	return new TextBox(new Pos(0, 0), new Size(20, 3), { value });
+	return new TextBox({ pos: new Pos(0, 0), size: new Size(20, 3) }, { value });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ describe('WindowManager', () => {
 		});
 
 		it('disabled control is skipped during auto-focus', () => {
-			const disabled = new Button(new Pos(0, 0), new Size(10, 3), { disabled: true });
+			const disabled = new Button({ pos: new Pos(0, 0), size: new Size(10, 3), disabled: true });
 			const enabled  = makeButton('B');
 			screen.addChild(disabled);
 			screen.addChild(enabled);
@@ -121,7 +121,7 @@ describe('WindowManager', () => {
 
 		it('Tab skips disabled controls', () => {
 			const a        = makeButton('A');
-			const disabled = new Button(new Pos(0, 0), new Size(10, 3), { disabled: true });
+			const disabled = new Button({ pos: new Pos(0, 0), size: new Size(10, 3), disabled: true });
 			const b        = makeButton('B');
 			screen.addChild(a);
 			screen.addChild(disabled);
@@ -153,7 +153,7 @@ describe('WindowManager', () => {
 
 		it('ignores setFocus on a disabled control', () => {
 			const a        = makeButton('A');
-			const disabled = new Button(new Pos(0, 0), new Size(10, 3), { disabled: true });
+			const disabled = new Button({ pos: new Pos(0, 0), size: new Size(10, 3), disabled: true });
 			screen.addChild(a);
 			screen.addChild(disabled);
 			wm.register(a);
@@ -208,7 +208,7 @@ describe('WindowManager', () => {
 
 		it('Enter triggers Button onPress callback', () => {
 			const onPress = vi.fn();
-			const btn = new Button(new Pos(0, 0), new Size(10, 3), { onPress });
+			const btn = new Button({ pos: new Pos(0, 0), size: new Size(10, 3) }, { onPress });
 			screen.addChild(btn);
 			wm.register(btn);
 			wm.setFocus(btn);
@@ -260,7 +260,7 @@ describe('WindowManager', () => {
 	describe('openDialog() / closeDialog()', () => {
 		it('captures focus inside the dialog', () => {
 			const main   = makeButton('Main');
-			const dialog = new Window(new Pos(0, 0), new Size(20, 5));
+			const dialog = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
 			const dBtn   = makeButton('DlgBtn');
 
 			screen.addChild(main);
@@ -277,7 +277,7 @@ describe('WindowManager', () => {
 
 		it('restores focus to main context after closeDialog()', () => {
 			const main   = makeButton('Main');
-			const dialog = new Window(new Pos(0, 0), new Size(20, 5));
+			const dialog = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
 			const dBtn   = makeButton('DlgBtn');
 
 			screen.addChild(main);
@@ -296,7 +296,7 @@ describe('WindowManager', () => {
 
 		it('Tab cycles only within dialog controls', () => {
 			const main   = makeButton('Main');
-			const dialog = new Window(new Pos(0, 0), new Size(30, 5));
+			const dialog = new Window({ pos: new Pos(0, 0), size: new Size(30, 5) });
 			const dA     = makeButton('A');
 			const dB     = makeButton('B');
 
@@ -322,21 +322,21 @@ describe('WindowManager', () => {
 	describe('Button.handleKey()', () => {
 		it('fires onPress on Enter', () => {
 			const onPress = vi.fn();
-			const btn     = new Button(new Pos(0, 0), new Size(10, 3), { onPress });
+			const btn     = new Button({ pos: new Pos(0, 0), size: new Size(10, 3) }, { onPress });
 			btn.handleKey('\r');
 			expect(onPress).toHaveBeenCalledOnce();
 		});
 
 		it('fires onPress on Space', () => {
 			const onPress = vi.fn();
-			const btn     = new Button(new Pos(0, 0), new Size(10, 3), { onPress });
+			const btn     = new Button({ pos: new Pos(0, 0), size: new Size(10, 3) }, { onPress });
 			btn.handleKey(' ');
 			expect(onPress).toHaveBeenCalledOnce();
 		});
 
 		it('does not fire onPress when disabled', () => {
 			const onPress = vi.fn();
-			const btn     = new Button(new Pos(0, 0), new Size(10, 3), { onPress, disabled: true });
+			const btn     = new Button({ pos: new Pos(0, 0), size: new Size(10, 3), disabled: true }, { onPress });
 			btn.handleKey('\r');
 			expect(onPress).not.toHaveBeenCalled();
 		});
@@ -355,13 +355,13 @@ describe('WindowManager', () => {
 
 		it('fires onChange with new state', () => {
 			const onChange = vi.fn();
-			const cb       = new Checkbox(new Pos(0, 0), 'opt', { onChange });
+			const cb       = new Checkbox({ pos: new Pos(0, 0), label: 'opt' }, { onChange });
 			cb.handleKey(' ');
 			expect(onChange).toHaveBeenCalledWith(true);
 		});
 
 		it('does not toggle when disabled', () => {
-			const cb = new Checkbox(new Pos(0, 0), 'opt', { disabled: true });
+			const cb = new Checkbox({ pos: new Pos(0, 0), label: 'opt', disabled: true });
 			cb.handleKey(' ');
 			expect(cb.isChecked()).toBe(false);
 		});
@@ -378,13 +378,13 @@ describe('WindowManager', () => {
 
 		it('fires onChange(true) on selection', () => {
 			const onChange = vi.fn();
-			const r        = new Radio(new Pos(0, 0), 'opt', { onChange });
+			const r        = new Radio({ pos: new Pos(0, 0), label: 'opt' }, { onChange });
 			r.handleKey(' ');
 			expect(onChange).toHaveBeenCalledWith(true);
 		});
 
 		it('does not select when disabled', () => {
-			const r = new Radio(new Pos(0, 0), 'opt', { disabled: true });
+			const r = new Radio({ pos: new Pos(0, 0), label: 'opt', disabled: true });
 			r.handleKey(' ');
 			expect(r.isChecked()).toBe(false);
 		});
@@ -394,8 +394,8 @@ describe('WindowManager', () => {
 
 	describe('Window.removeChild()', () => {
 		it('removes a child from the window', () => {
-			const parent = new Window(new Pos(0, 0), new Size(20, 10));
-			const child  = new Window(new Pos(0, 0), new Size(5, 5));
+			const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+			const child  = new Window({ pos: new Pos(0, 0), size: new Size(5, 5) });
 			parent.addChild(child);
 			parent.removeChild(child);
 			// After removal, render should not include the child cell data.
@@ -404,8 +404,8 @@ describe('WindowManager', () => {
 		});
 
 		it('is a no-op for a non-child', () => {
-			const parent = new Window(new Pos(0, 0), new Size(20, 10));
-			const other  = new Window(new Pos(0, 0), new Size(5, 5));
+			const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+			const other  = new Window({ pos: new Pos(0, 0), size: new Size(5, 5) });
 			expect(() => parent.removeChild(other)).not.toThrow();
 		});
 	});

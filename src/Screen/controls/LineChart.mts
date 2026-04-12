@@ -1,9 +1,6 @@
-import type { LineChartOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG } from '../types.mjs';
+import type { LineChartProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Formats a Y-axis label value as a compact string. */
 function formatYLabel(value: number): string {
@@ -23,25 +20,17 @@ export class LineChart extends Window {
 	private axisStyleId:  StyleId;
 	private labelStyleId: StyleId;
 
-	/** Creates a LineChart at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: LineChartOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
+	/** Creates a LineChart from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: LineChartProperties) {
+		super(wp);
 
-		super(pos, size, {
-			background: bgId,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		this.data     = cp?.data ?? [];
+		this.minValue = cp?.min;
+		this.maxValue = cp?.max;
 
-		this.data     = options?.data ?? [];
-		this.minValue = options?.min;
-		this.maxValue = options?.max;
-
-		this.lineStyleId  = reg.register({ foreground: options?.color ?? 75 });
+		const reg = getRegistry();
+		this.lineStyleId  = reg.register({ foreground: cp?.color ?? 75 });
 		this.axisStyleId  = reg.register({ foreground: 245 });
 		this.labelStyleId = reg.register({ foreground: 245 });
 	}
@@ -76,19 +65,6 @@ export class LineChart extends Window {
 		return this.maxValue;
 	}
 
-	/** LineChart is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; LineChart cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** LineChart cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
-	}
-
 	public override render(): void {
 		this.clear();
 
@@ -100,7 +76,7 @@ export class LineChart extends Window {
 			return;
 		}
 
-		// ── 1. Resolve data range ───────────────────────────────────────────────
+		// ── 1. Resolve data range ───────────────────────��───────────────────────
 		const dataMin   = this.minValue ?? (this.data.length > 0 ? Math.min(...this.data) : 0);
 		const dataMax   = this.maxValue ?? (this.data.length > 0 ? Math.max(...this.data) : 1);
 		const dataRange = dataMax - dataMin;
@@ -114,7 +90,7 @@ export class LineChart extends Window {
 		const maxLabelLen  = Math.max(...yLabelStrs.map(s => s.length));
 		const yLabelWidth  = maxLabelLen + 2;  // space + label + '┤'
 
-		// ── 3. Plot dimensions ───────────────────────────────────────────────────
+		// ── 3. Plot dimensions ───────────────────────��───────────────────────────
 		const plotW = width  - yLabelWidth;
 		const plotH = height - 1;  // last row = X-axis
 
@@ -130,7 +106,7 @@ export class LineChart extends Window {
 			return (plotH - 1) - Math.round(norm * (plotH - 1));
 		};
 
-		// ── 4. Draw Y-axis ────────────────────────────────────────────────────────
+		// ── 4. Draw Y-axis ───────────────────��────────────────────────────────────
 		const yAxisAbsX = ox + yLabelWidth - 1;  // column of '┤' / '│'
 
 		// Draw vertical line for all plot rows
@@ -152,7 +128,7 @@ export class LineChart extends Window {
 			}
 		}
 
-		// ── 5. Draw X-axis ────────────────────────────────────────────────────────
+		// ── 5. Draw X-axis ─────────────────────────���─────────────────────────���────
 		const xAxisAbsY = oy + plotH;
 		for (let col = 0; col < plotW; col++) {
 			const absX = ox + yLabelWidth + col;

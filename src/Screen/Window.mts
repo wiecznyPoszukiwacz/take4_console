@@ -1,7 +1,9 @@
-import type { Cell, StyleId, BorderStyle, WindowBorder, WindowOptions, WriteTextOptions, TerminalSize } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, WindowBorder, WindowProperties, WriteTextOptions, TerminalSize } from './types.mjs';
+import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
-import { Pos } from './Pos.mjs';
+import { getRegistry } from './RegistryHolder.mjs';
+import type { Pos } from './Pos.mjs';
 import { Size } from './Size.mjs';
 
 /** Characters used for each border style. */
@@ -23,33 +25,53 @@ export class Window {
 	public y: number;
 	/** Composited display buffer – rebuilt by render(); read by blitChild and Screen. */
 	protected region: Region;
-	/** Style registry for this window. Each window owns its own registry. */
+	/** Global style registry shared by all windows and controls. */
 	protected registry: StyleRegistry;
 	protected children: Window[];
+	/** Whether this window currently has keyboard focus. */
+	protected focused: boolean = false;
+	/** Whether this window is disabled (inactive and visually dimmed). */
+	protected disabled: boolean = false;
+	/** Optional text label displayed by the control. */
+	protected label: string = '';
+	/** Style ID used for normal (default) text rendering. Initialized from BUILTIN_TEXT. */
+	protected normalStyleId!: StyleId;
+	/** Style ID used when the control is focused. Initialized from BUILTIN_TEXT_FOCUSED. */
+	protected focusedStyleId!: StyleId;
+	/** Style ID used when the control is disabled. Initialized from BUILTIN_TEXT_DISABLED. */
+	protected disabledStyleId!: StyleId;
 
 	/** User-written content – survives render() cycles. */
 	private content: Region;
 	private background: StyleId;
 	private border: WindowBorder | false;
+	/** True when the original border config included an explicit color; prevents auto-sync. */
+	private borderColorExplicit: boolean = false;
 	private active: boolean;
 	private posSpec: Pos;
 	private sizeSpec: Size;
 
-	/** Creates a window at the given position and size with optional visual options.
+	/** Creates a window from the given properties.
 	 *  For percentage-based sizes, call addChild() before writing content to the window.
-	 *  An optional StyleRegistry may be provided; if omitted a fresh one is created. */
-	public constructor(
-		pos: Pos,
-		size: Size,
-		options?: WindowOptions,
-		registry?: StyleRegistry,
-	) {
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties) {
+		const pos  = wp.pos;
+		const size = wp.size ?? new Size(1, 1);
+
 		this.posSpec  = pos;
 		this.sizeSpec = size;
-		this.registry = registry ?? new StyleRegistry();
+		this.registry = getRegistry();
+		this.normalStyleId   = this.registry.getNamed(BUILTIN_TEXT)!;
+		this.focusedStyleId  = this.registry.getNamed(BUILTIN_TEXT_FOCUSED)!;
+		this.disabledStyleId = this.registry.getNamed(BUILTIN_TEXT_DISABLED)!;
 		this.children = [];
-		this.active   = options?.active ?? true;
-		this.border   = resolveBorder(options?.border);
+		this.focused  = wp.focused ?? false;
+		this.disabled = wp.disabled ?? false;
+		this.active   = wp.active ?? !this.disabled;
+		this.label    = wp.label ?? '';
+		this.background = wp.background ?? 0;
+		this.border   = resolveBorder(wp.border ?? wp.defaultBorder);
+		this.borderColorExplicit = this.border !== false && this.border.color !== undefined;
 
 		const { w, h } = size.isAbsolute() ? size.resolve(0, 0) : { w: 1, h: 1 };
 		this.region  = new Region(w, h);
@@ -63,8 +85,6 @@ export class Window {
 			this.x = 0;
 			this.y = 0;
 		}
-
-		this.background = options?.background ?? 0;
 	}
 
 	/** Returns the window dimensions (columns × rows). */
@@ -105,10 +125,53 @@ export class Window {
 		this.active = active;
 	}
 
+	/** Sets the focused state. Controls use this to change visual appearance on focus. */
+	public setFocused(focused: boolean): void {
+		this.focused = focused;
+	}
+
+	/** Returns whether this window currently has keyboard focus. */
+	public isFocused(): boolean {
+		return this.focused;
+	}
+
+	/** Sets the disabled state and deactivates the window when disabled. */
+	public setDisabled(disabled: boolean): void {
+		this.disabled = disabled;
+		this.setActive(!disabled);
+	}
+
+	/** Returns whether this window is currently disabled. */
+	public isDisabled(): boolean {
+		return this.disabled;
+	}
+
+	/** Sets the label text displayed by the control. */
+	public setLabel(label: string): void {
+		this.label = label;
+	}
+
+	/** Returns the current label text. */
+	public getLabel(): string {
+		return this.label;
+	}
+
 	/** Updates the border configuration. Effective on the next render() call.
 	 *  Intended for use by subclasses that need dynamic decoration (e.g. focus-state colour). */
 	protected updateBorder(border: WindowBorder | boolean | undefined): void {
 		this.border = resolveBorder(border);
+	}
+
+	/** Recomputes the border color from the current focused/disabled state.
+	 *  Called automatically at the start of render() so subclasses never need to do it manually.
+	 *  Only updates the color when no explicit color was provided in the original border config. */
+	private syncBorderColor(): void {
+		if (!this.border || this.borderColorExplicit) return;
+		this.border.color = this.disabled
+			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
+			: this.focused
+				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
+				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
 	}
 
 	/** Adds a child window. If the child uses percentage-based sizes they are resolved immediately
@@ -173,13 +236,19 @@ export class Window {
 	/** Writes text into the window's content area starting at (x, y) (default 0, 0).
 	 *  Coordinates are relative to the inner content area (i.e. decorations such as borders are excluded).
 	 *  Newline characters move to the next row, resetting x to startX.
-	 *  Characters outside the inner bounds are silently clipped. */
+	 *  Characters outside the inner bounds are silently clipped.
+	 *  When no style is provided, automatically picks disabledStyleId, focusedStyleId, or normalStyleId
+	 *  based on the current disabled/focused state. */
 	public writeText(text: string, options?: WriteTextOptions): void {
 		const { x: ox, y: oy } = this.getInnerOffset();
 		const { width: iw, height: ih } = this.getInnerSize();
 		const startX  = (options?.x ?? 0) + ox;
 		const startY  = (options?.y ?? 0) + oy;
-		const styleId = options?.style ?? 0;
+		const styleId = options?.style ?? (
+			this.disabled ? this.disabledStyleId :
+			this.focused  ? this.focusedStyleId  :
+			this.normalStyleId
+		);
 		let cx = startX;
 		let cy = startY;
 		for (const ch of text) {
@@ -200,6 +269,7 @@ export class Window {
 	 * The result is stored in region and used by blitChild / Screen.render().
 	 */
 	public render(): void {
+		this.syncBorderColor();
 		this.paintBackground();
 		this.blitContent();
 		this.paintBorder();

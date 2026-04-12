@@ -1,9 +1,8 @@
-import type { SpinnerOptions, StyleId } from '../types.mjs';
+import type { SpinnerProperties, WindowProperties, StyleId } from '../types.mjs';
 import { BUILTIN_TEXT } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** Animation style name → frame sequence. */
 const SPINNER_FRAMES: Record<'braille' | 'dots' | 'line' | 'circle' | 'arrow', string[]> = {
@@ -23,36 +22,30 @@ export class Spinner extends Window {
 	private frames:    string[];
 	private frame:     number;
 	private running:   boolean;
-	private label:     string;
-
 	private glyphStyleId: StyleId;
 	private labelStyleId: StyleId;
 
-	/** Creates a Spinner at the given position.
-	 *  Width is auto-computed as max(frameWidth) + (label ? 1 + label.length : 0).
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, options?: SpinnerOptions, registry?: StyleRegistry) {
-		const reg       = registry ?? new StyleRegistry();
-		const styleName = options?.style ?? 'braille';
+	/** Creates a Spinner from window properties and optional control-specific properties.
+	 *  When wp.size is omitted, width is auto-computed as max(frameWidth) + (label ? 1 + label.length : 0).
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: SpinnerProperties) {
+		const reg       = getRegistry();
+		const styleName = cp?.style ?? 'braille';
 		const frames    = SPINNER_FRAMES[styleName];
-		const label     = options?.label ?? '';
+		const label     = wp.label ?? '';
 		const glyphW    = Math.max(...frames.map(f => [...f].length));
 		const width     = glyphW + (label.length > 0 ? 1 + label.length : 0);
+		const size      = wp.size ?? new Size(Math.max(1, width), 1);
 
-		super(pos, new Size(Math.max(1, width), 1), {
-			background: options?.background,
-			border:     options?.border,
-			active:     options?.active,
-		}, reg);
+		super({ ...wp, size });
 
 		this.styleName = styleName;
 		this.frames    = frames;
-		this.frame     = ((options?.frame ?? 0) % frames.length + frames.length) % frames.length;
-		this.running   = options?.running ?? true;
-		this.label     = label;
+		this.frame     = ((cp?.frame ?? 0) % frames.length + frames.length) % frames.length;
+		this.running   = cp?.running ?? true;
 
-		this.glyphStyleId = reg.register({ foreground: options?.color ?? 75, bold: true });
-		this.labelStyleId = reg.getNamed(BUILTIN_TEXT) ?? reg.register({ foreground: 252 });
+		this.glyphStyleId = reg.register({ foreground: cp?.color ?? 75, bold: true });
+		this.labelStyleId = reg.getNamed(BUILTIN_TEXT)!;
 	}
 
 	/** Advances the animation by one frame. No-op when running is false. */
@@ -87,33 +80,9 @@ export class Spinner extends Window {
 		return this.running;
 	}
 
-	/** Sets the label shown to the right of the spinner glyph. Note: does not
-	 *  resize the control — width is fixed at construction time. */
-	public setLabel(label: string): void {
-		this.label = label;
-	}
-
-	/** Returns the current label text. */
-	public getLabel(): string {
-		return this.label;
-	}
-
 	/** Returns the animation style name. */
 	public getStyleName(): keyof typeof SPINNER_FRAMES {
 		return this.styleName;
-	}
-
-	/** Spinner is not interactive — always returns false. */
-	public isFocused(): boolean {
-		return false;
-	}
-
-	/** No-op; Spinner cannot receive focus. */
-	public setFocused(_focused: boolean): void {}
-
-	/** Spinner cannot be disabled — always returns false. */
-	public isDisabled(): boolean {
-		return false;
 	}
 
 	public override render(): void {

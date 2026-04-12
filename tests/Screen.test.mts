@@ -63,7 +63,7 @@ describe('Screen', () => {
 
   describe('window tree compositing', () => {
     it('child window content appears in render output', () => {
-      const child = new Window(new Pos(0, 0), new Size(1, 1));
+      const child = new Window({ pos: new Pos(0, 0), size: new Size(1, 1) });
       child.setCell(0, 0, 'W');
       screen.addChild(child);
 

@@ -87,7 +87,7 @@ All interfaces and type aliases live here. Notable:
 - `BUILTIN_*` string constants (`BUILTIN_WINDOW_BG`, `BUILTIN_BORDER`, …) – names for the ten default styles pre-registered by `Screen`; controls look them up via `registry.getNamed(...)` with hardcoded fallbacks
 
 ### Controls (`src/Screen/controls/`)
-All controls extend `Window`. Constructor signature: `(pos, size?, options?, registry?)` — `size` is omitted for auto-sized controls (`Checkbox`, `Radio`, `StatusLED`).
+All controls extend `Window`. Constructor signature: `(pos, size?, options?)` — `size` is omitted for auto-sized controls (`Checkbox`, `Radio`, `StatusLED`). Common properties (`focused`, `disabled`, `label`, `normalStyleId`, `disabledStyleId`) and their getters/setters are inherited from `Window`.
 
 **Interactive (`Focusable`, registerable with `WindowManager`):**
 - `Button` – clickable button; `onPress` on Enter/Space
@@ -107,7 +107,7 @@ All controls extend `Window`. Constructor signature: `(pos, size?, options?, reg
 - `Sparkline` (0.11.0) – one-row inline chart using the eight-level block-character ramp (` ▁▂▃▄▅▆▇█`)
 - `Spinner` (0.11.0) – animated loader; styles: `braille`/`dots`/`line`/`circle`/`arrow`; advanced manually via `step()`
 
-Read-only controls return `false` from `isFocused()`/`isDisabled()` and ignore `setFocused()`.
+Read-only controls inherit `isFocused()`/`setFocused()`/`isDisabled()`/`setDisabled()` from `Window` (no longer overridden as no-ops).
 
 ### InterfaceBuilder (`src/Screen/InterfaceBuilder.mts`)
 Builds a window tree from a YAML description. `build(yamlText, screen, wm?)` / `buildFromFile(path, screen, wm?)` return `Map<string, Window>` keyed by YAML `id`.

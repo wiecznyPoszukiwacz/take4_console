@@ -1,4 +1,16 @@
 import type { CellAttributes, StyleId, Color } from './types.mjs';
+import {
+	BUILTIN_WINDOW_BG,
+	BUILTIN_BORDER,
+	BUILTIN_BORDER_FOCUSED,
+	BUILTIN_BORDER_DISABLED,
+	BUILTIN_TEXT,
+	BUILTIN_TEXT_FOCUSED,
+	BUILTIN_TEXT_DISABLED,
+	BUILTIN_TEXT_PLACEHOLDER,
+	BUILTIN_TEXT_CHECKED,
+	BUILTIN_CURSOR,
+} from './types.mjs';
 
 /** Central registry that maps integer style IDs to CellAttributes objects.
  *  Identical attribute sets always map to the same ID (deduplication). */
@@ -9,6 +21,20 @@ export class StyleRegistry {
 	private index: Map<string, StyleId> = new Map([['{}', 0]]);
 	/** Name → ID map for built-in and user-defined named styles. */
 	private named: Map<string, StyleId> = new Map();
+
+	/** Creates a new StyleRegistry with built-in named styles pre-registered. */
+	public constructor() {
+		this.registerNamed(BUILTIN_WINDOW_BG,        { background: 237 });
+		this.registerNamed(BUILTIN_BORDER,           { foreground: 240 });
+		this.registerNamed(BUILTIN_BORDER_FOCUSED,   { foreground: 75 });
+		this.registerNamed(BUILTIN_BORDER_DISABLED,  { foreground: 238 });
+		this.registerNamed(BUILTIN_TEXT,             { foreground: 252 });
+		this.registerNamed(BUILTIN_TEXT_FOCUSED,     { foreground: 255, bold: true });
+		this.registerNamed(BUILTIN_TEXT_DISABLED,    { foreground: 245, dim: true });
+		this.registerNamed(BUILTIN_TEXT_PLACEHOLDER, { foreground: 242, italic: true });
+		this.registerNamed(BUILTIN_TEXT_CHECKED,     { foreground: 76, bold: true });
+		this.registerNamed(BUILTIN_CURSOR,           { inverse: true });
+	}
 
 	/** Registers a CellAttributes object and returns its stable ID.
 	 *  If an identical style was registered before, returns the existing ID. */

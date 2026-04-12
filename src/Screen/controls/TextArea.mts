@@ -1,19 +1,7 @@
-import type { TextAreaOptions, StyleId } from '../types.mjs';
-import {
-	BUILTIN_WINDOW_BG,
-	BUILTIN_BORDER,
-	BUILTIN_BORDER_FOCUSED,
-	BUILTIN_BORDER_DISABLED,
-	BUILTIN_TEXT,
-	BUILTIN_TEXT_DISABLED,
-	BUILTIN_TEXT_PLACEHOLDER,
-	BUILTIN_CURSOR,
-} from '../types.mjs';
-// Note: BUILTIN_TEXT_FOCUSED is not imported – TextArea has no focused-text style, only focused-border.
+import type { TextAreaProperties, WindowProperties, StyleId } from '../types.mjs';
+import { BUILTIN_TEXT_PLACEHOLDER, BUILTIN_CURSOR } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
+import { getRegistry } from '../RegistryHolder.mjs';
 
 /** A multi-line text-input widget with 2-D cursor, scrolling, and placeholder support.
  *  Call handleKey() to feed raw terminal key strings from your input loop. */
@@ -23,51 +11,32 @@ export class TextArea extends Window {
 	private scrollX: number;
 	private scrollY: number;
 	private placeholder: string;
-	private focused: boolean;
-	private disabled: boolean;
-	private textStyleId: StyleId;
 	private placeholderStyleId: StyleId;
 	private cursorStyleId: StyleId;
-	private disabledStyleId: StyleId;
 
-	/** Creates a TextArea at the given position and size.
-	 *  An optional StyleRegistry may be shared with the parent window. */
-	public constructor(pos: Pos, size: Size, options?: TextAreaOptions, registry?: StyleRegistry) {
-		const reg  = registry ?? new StyleRegistry();
-		const bgId = options?.background
-			?? reg.getNamed(BUILTIN_WINDOW_BG)
-			?? reg.register({ background: 237 });
-		const borderColor = options?.disabled
-			? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: reg.getNamedForeground(BUILTIN_BORDER, 240);
-		super(pos, size, {
-			background: bgId,
-			border: {
-				top: true, right: true, bottom: true, left: true,
-				style: 'single',
-				color: borderColor,
-			},
-			active: !(options?.disabled ?? false),
-		}, reg);
+	/** Creates a TextArea from window properties and optional control-specific properties.
+	 *  Uses the global StyleRegistry set by the Screen constructor. */
+	public constructor(wp: WindowProperties, cp?: TextAreaProperties) {
+		super({
+			...wp,
+			defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'single' },
+		});
 
-		this.lines       = (options?.value ?? '').split('\n');
-		this.placeholder = options?.placeholder ?? '';
-		this.focused     = options?.focused      ?? false;
-		this.disabled    = options?.disabled     ?? false;
+		this.lines       = (cp?.value ?? '').split('\n');
+		this.placeholder = cp?.placeholder ?? '';
 		this.scrollX     = 0;
 		this.scrollY     = 0;
 
-		const rawCursor = options?.cursor ?? { x: 0, y: 0 };
+		const rawCursor = cp?.cursor ?? { x: 0, y: 0 };
 		this.cursor = {
 			y: Math.max(0, Math.min(rawCursor.y, this.lines.length - 1)),
 			x: 0,
 		};
 		this.cursor.x = Math.max(0, Math.min(rawCursor.x, this.lines[this.cursor.y].length));
 
-		this.textStyleId        = reg.getNamed(BUILTIN_TEXT)             ?? reg.register({ foreground: 252 });
-		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER) ?? reg.register({ foreground: 242, italic: true });
-		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)           ?? reg.register({ inverse: true });
-		this.disabledStyleId    = reg.getNamed(BUILTIN_TEXT_DISABLED)    ?? reg.register({ foreground: 245, dim: true });
+		const reg = getRegistry();
+		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER)!;
+		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)!;
 
 		this.clampScroll();
 	}
@@ -95,27 +64,6 @@ export class TextArea extends Window {
 	/** Returns a copy of the current cursor position. */
 	public getCursor(): { x: number; y: number } {
 		return { ...this.cursor };
-	}
-
-	/** Sets the focused state; affects border colour and cursor visibility on next render(). */
-	public setFocused(focused: boolean): void {
-		this.focused = focused;
-	}
-
-	/** Returns whether the TextArea currently has focus. */
-	public isFocused(): boolean {
-		return this.focused;
-	}
-
-	/** Sets the disabled state; dims the control on next render(). */
-	public setDisabled(disabled: boolean): void {
-		this.disabled = disabled;
-		this.setActive(!disabled);
-	}
-
-	/** Returns whether the TextArea is currently disabled. */
-	public isDisabled(): boolean {
-		return this.disabled;
 	}
 
 	/** Processes a key string from the terminal input loop and updates value/cursor.
@@ -196,25 +144,13 @@ export class TextArea extends Window {
 		this.clampScroll();
 	}
 
-	/** Rebuilds the TextArea: updates border colour, renders visible lines, draws cursor. */
+	/** Rebuilds the TextArea: renders visible lines, draws cursor. */
 	public override render(): void {
 		this.clear();
 
-		const borderColor = this.disabled
-			? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-			: this.focused
-				? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-		this.updateBorder({
-			top: true, right: true, bottom: true, left: true,
-			style: 'single',
-			color: borderColor,
-		});
-
 		const { width, height } = this.getInnerSize();
 		const isEmpty           = this.lines.length === 1 && this.lines[0] === '';
-		const textStyle         = this.disabled ? this.disabledStyleId : this.textStyleId;
-		const phStyle           = this.disabled ? this.disabledStyleId : this.placeholderStyleId;
+		const phStyle           = this.disabled ? undefined : this.placeholderStyleId;
 
 		if (isEmpty && !this.focused && this.placeholder !== '') {
 			this.writeText(this.placeholder.slice(0, width), { style: phStyle });
@@ -223,7 +159,7 @@ export class TextArea extends Window {
 				const lineIdx = row + this.scrollY;
 				if (lineIdx >= this.lines.length) break;
 				const visible = this.lines[lineIdx].slice(this.scrollX, this.scrollX + width);
-				this.writeText(visible, { x: 0, y: row, style: textStyle });
+				this.writeText(visible, { x: 0, y: row, style: this.disabled ? undefined : this.normalStyleId });
 			}
 		}
 
@@ -233,7 +169,7 @@ export class TextArea extends Window {
 			const screenY = this.cursor.y - this.scrollY;
 			if (screenX >= 0 && screenX < width && screenY >= 0 && screenY < height) {
 				const cursorChar  = this.lines[this.cursor.y][this.cursor.x] ?? ' ';
-				const cursorStyle = this.registry.merge(textStyle, this.cursorStyleId);
+				const cursorStyle = this.registry.merge(this.normalStyleId, this.cursorStyleId);
 				this.writeText(cursorChar, { x: screenX, y: screenY, style: cursorStyle });
 			}
 		}

@@ -44,23 +44,17 @@ import {
 const screen = new Screen();
 screen.fill(' ', screen.registerStyle({ background: 234 }));
 
-// 2. Add a couple of controls. Controls share the screen's style registry
-//    so they can resolve built-in named styles.
-const registry = screen.getStyleRegistry();
-
+// 2. Add controls. Screen registers a global StyleRegistry on construction;
+//    all controls created afterwards share it automatically.
 const name = new TextBox(
-  new Pos(2, 2),
-  new Size(30, 3),
+  { pos: new Pos(2, 2), size: new Size(30, 3) },
   { placeholder: 'your name' },
-  registry,
 );
 screen.addChild(name);
 
 const ok = new Button(
-  new Pos(2, 6),
-  new Size(10, 3),
-  { label: 'OK', onPress: () => console.error(`hello, ${name.getValue()}`) },
-  registry,
+  { pos: new Pos(2, 6), size: new Size(10, 3), label: 'OK' },
+  { onPress: () => console.error(`hello, ${name.getValue()}`) },
 );
 screen.addChild(ok);
 
@@ -114,15 +108,16 @@ import type {
   Color, StyleId, Cell, CellAttributes, TerminalSize,
 
   // Window / border
-  BorderStyle, WindowBorder, WindowOptions, WriteTextOptions,
+  BorderStyle, WindowBorder, WindowProperties, WriteTextOptions,
 
-  // Control option interfaces
-  ControlOptions,
-  ButtonOptions, TextBoxOptions, TextAreaOptions,
-  CheckboxOptions, RadioOptions,
-  StatusLEDOptions, ProgressBarOptions, ProgressBarVOptions,
-  LineChartOptions, BarChartOptions,
-  ListBoxOptions, TabsOptions, SparklineOptions, SpinnerOptions,
+  // Control properties interfaces (first constructor arg)
+  // — WindowProperties is the base for all controls
+  // Control-specific options (second constructor arg)
+  ButtonProperties, TextBoxProperties, TextAreaProperties,
+  CheckboxProperties, RadioProperties,
+  StatusLEDProperties, ProgressBarProperties, ProgressBarVProperties,
+  LineChartProperties, BarChartProperties,
+  ListBoxProperties, TabsProperties, SparklineProperties, SpinnerProperties,
 
   // Focus & input
   Focusable, TerminalMouseEvent, WindowManagerOptions,
@@ -214,6 +209,7 @@ Screen (extends Window)
 The render pipeline for every `Window.render()` call:
 
 ```
+0. syncBorderColor()   update border colour from focused/disabled state
 1. paintBackground()   fill region with background style (if any)
 2. blitContent()       overlay the content buffer (what the user wrote)
 3. paintBorder()       draw box-drawing characters on edges
@@ -226,6 +222,8 @@ The render pipeline for every `Window.render()` call:
 - `region` (protected): rebuilt from scratch on every `render()`. Read by `getCell()` and `blitChild`.
 
 Write to `content` → it shows up in `region` after the next `render()`.
+
+`writeText()` picks the text style automatically when `style` is omitted: `disabledStyleId` when disabled, `focusedStyleId` when focused, otherwise `normalStyleId`. Pass an explicit `style` only for special cells (e.g. a filled bar or a cursor highlight).
 
 ---
 
@@ -276,15 +274,15 @@ screen.setBuiltinStyle(BUILTIN_BORDER_FOCUSED, { foreground: 214 }); // amber fo
 
 ## 4. Implementing a custom control — step by step
 
-### 4.1 Define the options interface
+### 4.1 Define the properties interface
 
-Add your options to `src/Screen/types.mts`. Extend `ControlOptions` so the control inherits `background?`, `border?`, `active?`, `focused?`, `disabled?`.
+Add your control-specific properties to `src/Screen/types.mts`. The first constructor argument always extends `WindowProperties` (position, size, border, background, label, focused, disabled, …). Define a separate interface for control-specific options passed as the second argument.
 
 ```typescript
 // src/Screen/types.mts
 
-/** Options for the Gauge control. */
-export interface GaugeOptions extends ControlOptions {
+/** Control-specific options for the Gauge (second constructor argument). */
+export interface GaugeProperties {
   /** Current value, 0–max. Default: 0. */
   value?: number;
   /** Maximum value. Default: 100. */
@@ -296,98 +294,68 @@ export interface GaugeOptions extends ControlOptions {
 
 ### 4.2 Create the class skeleton
 
-Place the file in `src/Screen/controls/MyControl.mts`. Import your interface and the built-in style constants you need.
+Place the file in `src/Screen/controls/MyControl.mts`. Import your properties interface and any style constants you need.
+
+`focused`, `disabled`, `label`, `normalStyleId`, `disabledStyleId`, and `focusedStyleId` are all inherited from `Window` — do not re-declare them.
 
 ```typescript
 // src/Screen/controls/Gauge.mts
 
-import type { GaugeOptions, StyleId } from '../types.mjs';
-import {
-  BUILTIN_WINDOW_BG,
-  BUILTIN_BORDER,
-  BUILTIN_BORDER_FOCUSED,
-  BUILTIN_BORDER_DISABLED,
-  BUILTIN_TEXT,
-  BUILTIN_TEXT_FOCUSED,
-  BUILTIN_TEXT_DISABLED,
-} from '../types.mjs';
+import type { GaugeProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
 
 export class Gauge extends Window {
-  // state
-  private value:    number;
-  private max:      number;
-  private focused:  boolean;
-  private disabled: boolean;
+  // control-specific state
+  private value:    number = 0;
+  private max:      number = 100;
   private onChange?: (value: number) => void;
 
-  // cached style IDs
-  private filledStyleId:   StyleId;
-  private emptyStyleId:    StyleId;
-  private labelStyleId:    StyleId;
-  private disabledStyleId: StyleId;
+  // cached style IDs (registered after super())
+  private filledStyleId!: StyleId;
+  private emptyStyleId!:  StyleId;
 
   // ...
 }
 ```
 
-### 4.3 Constructor: registry, super, styles
+### 4.3 Constructor: WindowProperties, super, styles
 
-**Key pattern:** create (or receive) the `StyleRegistry` *before* calling `super()` so you can use it for both the `super()` options and your own style lookups.
+**Key pattern:** forward `WindowProperties` to `super()`, adding a `defaultBorder` to set the border shape used when the caller doesn't provide one. Register your own style IDs *after* calling `super()` — `this.registry` is available immediately after.
+
+The global `StyleRegistry` is set by `Screen` on construction (via `RegistryHolder`). All controls created after `new Screen()` share that registry automatically — no need to pass it as a parameter.
 
 ```typescript
-public constructor(pos: Pos, size: Size, options?: GaugeOptions, registry?: StyleRegistry) {
-  // 1. Resolve registry first so we can use it before AND after super().
-  const reg   = registry ?? new StyleRegistry();
+public constructor(wp: WindowProperties, cp?: GaugeProperties) {
+  // 1. Forward to Window. defaultBorder provides the shape when the caller
+  //    omits border — Window.syncBorderColor() sets the colour automatically.
+  super({
+    ...wp,
+    defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'single' },
+  });
 
-  // 2. Resolve background: use option, fall back to built-in, fall back to hardcoded.
-  const bgId  = options?.background
-    ?? reg.getNamed(BUILTIN_WINDOW_BG)
-    ?? reg.register({ background: 237 });
+  // 2. Store control-specific state (this.* is available after super()).
+  this.max      = Math.max(1, cp?.max   ?? 100);
+  this.value    = Math.max(0, Math.min(cp?.value ?? 0, this.max));
+  this.onChange = cp?.onChange;
 
-  // 3. Initial border colour (overridden every render() anyway).
-  const borderColor = options?.disabled
-    ? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-    : reg.getNamedForeground(BUILTIN_BORDER, 240);
-
-  // 4. Call super with the resolved options and the registry.
-  super(pos, size, {
-    background: bgId,
-    border: {
-      top: true, right: true, bottom: true, left: true,
-      style: 'single',
-      color: borderColor,
-    },
-    active: !(options?.disabled ?? false),
-  }, reg);
-
-  // 5. Store state (after super, this.* is available).
-  this.value    = Math.max(0, Math.min(options?.value    ?? 0,   options?.max ?? 100));
-  this.max      = Math.max(1, options?.max ?? 100);
-  this.focused  = options?.focused  ?? false;
-  this.disabled = options?.disabled ?? false;
-  this.onChange = options?.onChange;
-
-  // 6. Register / look up style IDs.
-  //    Always use the same `reg` local, not `this.registry` — they are the same object,
-  //    but using `reg` avoids the "before super" restriction for any future refactors.
-  this.filledStyleId   = reg.register({ background: 75 });
-  this.emptyStyleId    = reg.register({ background: 238 });
-  this.labelStyleId    = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
-  this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
+  // 3. Register extra style IDs that aren't part of the inherited set.
+  //    normalStyleId / focusedStyleId / disabledStyleId come from Window.
+  this.filledStyleId = this.registry.register({ background: 75 });
+  this.emptyStyleId  = this.registry.register({ background: 238 });
 }
 ```
 
 **Rules:**
 - Never pass `CellAttributes` directly to `setCell` / `writeText` / `fill`. Always convert to a `StyleId` first.
-- If you share a `Screen`'s registry, the built-in named styles will be found by `getNamed`. If you construct the control standalone (e.g. in a test), they won't — hence the hardcoded fallback on every line.
+- `focused`, `disabled`, `label`, `normalStyleId`, `focusedStyleId`, and `disabledStyleId` are inherited from `Window`. Do not re-declare them.
+- `Window.syncBorderColor()` updates the border colour automatically on every `render()` based on `focused`/`disabled` state. Do not call `updateBorder()` for colour-only updates.
+- `writeText()` auto-picks `normalStyleId`, `focusedStyleId`, or `disabledStyleId` when you omit the `style` option — rely on this for most label rendering.
 
 ### 4.4 State setters and getters
 
 Every stateful field needs a setter and a getter. The setters do *not* call `render()` — the caller decides when to re-render.
+
+`isFocused()`, `setFocused()`, `isDisabled()`, and `setDisabled()` are already implemented by `Window`. Override them only if you need additional side effects (e.g. updating a cursor position). The border colour and text style update automatically on the next `render()`.
 
 ```typescript
 /** Sets the current value (clamped to 0–max). */
@@ -398,27 +366,6 @@ public setValue(value: number): void {
 /** Returns the current value. */
 public getValue(): number {
   return this.value;
-}
-
-/** Sets the focused state. Affects border colour and label style on next render(). */
-public setFocused(focused: boolean): void {
-  this.focused = focused;
-}
-
-/** Returns whether the control currently has focus. */
-public isFocused(): boolean {
-  return this.focused;
-}
-
-/** Sets the disabled state. Dims the control and disables interaction on next render(). */
-public setDisabled(disabled: boolean): void {
-  this.disabled = disabled;
-  this.setActive(!disabled);  // Window.setActive() controls the global dim on render
-}
-
-/** Returns whether the control is currently disabled. */
-public isDisabled(): boolean {
-  return this.disabled;
 }
 ```
 
@@ -449,10 +396,10 @@ public override render(): void {
   }
 
   // Centred "value / max" label.
+  // No explicit style needed — writeText() auto-picks normal/focused/disabled.
   const label  = `${this.value}/${this.max}`;
   const labelX = Math.max(0, Math.floor((width - label.length) / 2));
-  const style  = this.disabled ? this.disabledStyleId : this.labelStyleId;
-  this.writeText(label, { x: labelX, y: 0, style });
+  this.writeText(label, { x: labelX, y: 0 });
 
   // ── 3. Composite ──────────────────────────────────────────────────────────
   super.render();
@@ -465,31 +412,29 @@ Coordinates passed to `writeText` are always relative to the *inner content area
 
 ### 4.6 Dynamic borders
 
-Controls typically change their border colour based on state (focused / disabled). Use `updateBorder()` — a `protected` method inherited from `Window` — at the top of `render()`, before calling `super.render()`:
+Border colour is managed automatically by `Window.syncBorderColor()`, which is called at the start of every `render()`. It uses the built-in named styles:
+
+| State | Style constant | Default colour |
+|---|---|---|
+| Disabled | `BUILTIN_BORDER_DISABLED` | ANSI 238 (dark grey) |
+| Focused | `BUILTIN_BORDER_FOCUSED` | ANSI 75 (blue) |
+| Normal | `BUILTIN_BORDER` | ANSI 240 (grey) |
+
+You do **not** need to call `updateBorder()` for colour changes. Simply set `defaultBorder` in the constructor — the colour updates automatically on every frame.
+
+To use a **fixed** border colour that is never auto-updated, set the `color` field explicitly in the `border` property passed by the caller (or in `defaultBorder`):
 
 ```typescript
-public override render(): void {
-  this.clear();
-
-  // Resolve border colour from the named style (falls back to a hardcoded ANSI number).
-  const borderColor = this.disabled
-    ? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-    : this.focused
-      ? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-      : this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-
-  this.updateBorder({
-    top: true, right: true, bottom: true, left: true,
-    style: 'single',
-    color: borderColor,
-  });
-
-  // ... draw content ...
-  super.render();
-}
+// Fixed amber border — colour never changes even when focused.
+super({ ...wp, defaultBorder: { top: true, right: true, bottom: true, left: true,
+                                style: 'rounded', color: 214 } });
 ```
 
-`updateBorder` replaces the border config for the next `render()` only — it does not persist. You must call it every time inside `render()`.
+To override the focused/disabled border colours globally:
+
+```typescript
+screen.setBuiltinStyle(BUILTIN_BORDER_FOCUSED, { foreground: 214 }); // amber
+```
 
 ### 4.7 Keyboard input — the Focusable interface
 
@@ -549,7 +494,8 @@ Register your control after adding it to the window tree:
 const screen = new Screen();
 const wm     = new WindowManager(screen);
 
-const gauge = new Gauge(Pos.center(), new Size(30, 3), { max: 50 }, screen.getStyleRegistry());
+// Screen sets the global registry on construction — Gauge picks it up automatically.
+const gauge = new Gauge({ pos: Pos.center(), size: new Size(30, 3) }, { max: 50 });
 screen.addChild(gauge);
 
 // Register for Tab focus cycle. Pass all ancestor Windows after the control.
@@ -577,25 +523,25 @@ import { Size }  from '../../src/Screen/Size.mjs';
 describe('Gauge', () => {
   // ── 1. Constructor / state ─────────────────────────────────────────────────
   it('defaults to value 0', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3));
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3) });
     expect(g.getValue()).toBe(0);
   });
 
   it('clamps value to max in constructor', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3), { value: 999, max: 50 });
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3) }, { value: 999, max: 50 });
     expect(g.getValue()).toBe(50);
   });
 
   // ── 2. render() — visual output ───────────────────────────────────────────
   it('renders a border', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(10, 3));
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(10, 3) });
     g.render();
     expect(g.getCell(0, 0).char).toBe('┌');
     expect(g.getCell(9, 2).char).toBe('┘');
   });
 
   it('filled portion has a distinct background', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(12, 3), { value: 50, max: 100 });
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(12, 3) }, { value: 50, max: 100 });
     g.render();
     // inner width = 10 (border on both sides); 50% = 5 cells filled
     const filledBg = g.getCell(1, 1).attributes.background; // first inner cell
@@ -605,33 +551,33 @@ describe('Gauge', () => {
 
   // ── 3. handleKey ──────────────────────────────────────────────────────────
   it('right arrow increments value', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3), { value: 5, max: 10 });
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3) }, { value: 5, max: 10 });
     g.handleKey('right');
     expect(g.getValue()).toBe(6);
   });
 
   it('does not exceed max', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3), { value: 10, max: 10 });
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3) }, { value: 10, max: 10 });
     g.handleKey('right');
     expect(g.getValue()).toBe(10);
   });
 
   it('disabled control ignores key presses', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3), { value: 5, disabled: true });
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3), disabled: true }, { value: 5 });
     g.handleKey('right');
     expect(g.getValue()).toBe(5);
   });
 
   // ── 4. Focusable interface ────────────────────────────────────────────────
   it('isFocused / setFocused round-trip', () => {
-    const g = new Gauge(new Pos(0, 0), new Size(20, 3));
+    const g = new Gauge({ pos: new Pos(0, 0), size: new Size(20, 3) });
     g.setFocused(true);
     expect(g.isFocused()).toBe(true);
   });
 
   it('focused state changes border color', () => {
-    const g       = new Gauge(new Pos(0, 0), new Size(10, 3), { focused: false });
-    const gFocused = new Gauge(new Pos(0, 0), new Size(10, 3), { focused: true  });
+    const g        = new Gauge({ pos: new Pos(0, 0), size: new Size(10, 3) });
+    const gFocused = new Gauge({ pos: new Pos(0, 0), size: new Size(10, 3), focused: true });
     g.render();
     gFocused.render();
     const normalColor  = g.getCell(0, 0).attributes.foreground;
@@ -652,50 +598,24 @@ A simple horizontal progress bar with a percentage label. No keyboard interactio
 ```typescript
 // src/Screen/controls/ProgressBar.mts
 
-import type { ControlOptions, StyleId } from '../types.mjs';
-import { BUILTIN_WINDOW_BG, BUILTIN_TEXT, BUILTIN_TEXT_DISABLED } from '../types.mjs';
+import type { ProgressBarProperties, WindowProperties, StyleId } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
-
-export interface ProgressBarOptions extends ControlOptions {
-  /** Current value, 0–max. Default: 0. */
-  value?: number;
-  /** Maximum value. Default: 100. */
-  max?: number;
-  /** ANSI color for the filled portion. Default: 75 (blue). */
-  fillColor?: number;
-}
 
 export class ProgressBar extends Window {
   private value:         number;
   private max:           number;
   private filledStyleId: StyleId;
   private emptyStyleId:  StyleId;
-  private labelStyleId:  StyleId;
-  private disabledId:    StyleId;
 
   /** Creates a ProgressBar. Recommended height: 1 (no border) or 3 (with border). */
-  public constructor(pos: Pos, size: Size, options?: ProgressBarOptions, registry?: StyleRegistry) {
-    const reg   = registry ?? new StyleRegistry();
-    const bgId  = options?.background
-      ?? reg.getNamed(BUILTIN_WINDOW_BG)
-      ?? reg.register({ background: 237 });
+  public constructor(wp: WindowProperties, cp?: ProgressBarProperties) {
+    super(wp);  // no defaultBorder — ProgressBar has none by default
 
-    super(pos, size, {
-      background: bgId,
-      border: options?.border,
-      active: !(options?.disabled ?? false),
-    }, reg);
+    this.max   = Math.max(1, cp?.max   ?? 100);
+    this.value = Math.max(0, Math.min(cp?.value ?? 0, this.max));
 
-    this.max   = Math.max(1, options?.max   ?? 100);
-    this.value = Math.max(0, Math.min(options?.value ?? 0, this.max));
-
-    this.filledStyleId = reg.register({ background: options?.fillColor ?? 75 });
-    this.emptyStyleId  = reg.register({ background: 238 });
-    this.labelStyleId  = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 255, bold: true });
-    this.disabledId    = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
+    this.filledStyleId = this.registry.register({ background: cp?.fillColor ?? 75 });
+    this.emptyStyleId  = this.registry.register({ background: 238 });
   }
 
   /** Sets the current value (clamped to 0–max). Caller must call render() afterwards. */
@@ -707,15 +627,6 @@ export class ProgressBar extends Window {
   public getValue(): number {
     return this.value;
   }
-
-  /** ProgressBar is not interactive — returns false. */
-  public isFocused(): boolean { return false; }
-
-  /** No-op; ProgressBar cannot receive focus. */
-  public setFocused(_focused: boolean): void {}
-
-  /** Returns whether the control is disabled. */
-  public isDisabled(): boolean { return !this.active; }  // active reflects disabled state
 
   public override render(): void {
     this.clear();
@@ -729,11 +640,10 @@ export class ProgressBar extends Window {
       this.setCell(x, 0, ' ', x < filled ? this.filledStyleId : this.emptyStyleId);
     }
 
-    // Draw centred percentage label over the bar.
-    const label   = `${Math.round(pct * 100)}%`;
-    const labelX  = Math.max(0, Math.floor((width - label.length) / 2));
-    const labelId = this.isDisabled() ? this.disabledId : this.labelStyleId;
-    this.writeText(label, { x: labelX, y: 0, style: labelId });
+    // Centred percentage label — writeText() auto-applies disabled style when needed.
+    const label  = `${Math.round(pct * 100)}%`;
+    const labelX = Math.max(0, Math.floor((width - label.length) / 2));
+    this.writeText(label, { x: labelX, y: 0 });
 
     super.render();
   }
@@ -745,10 +655,8 @@ Usage:
 ```typescript
 const screen = new Screen();
 const bar    = new ProgressBar(
-  Pos.center(),
-  new Size(30, 1),
+  { pos: Pos.center(), size: new Size(30, 1) },
   { value: 42, max: 100, fillColor: 75 },
-  screen.getStyleRegistry(),
 );
 screen.addChild(bar);
 
@@ -766,22 +674,10 @@ A control that lets the user increment/decrement a numeric value with ← / → 
 ```typescript
 // src/Screen/controls/NumberStepper.mts
 
-import type { ControlOptions, StyleId } from '../types.mjs';
-import {
-  BUILTIN_WINDOW_BG,
-  BUILTIN_BORDER,
-  BUILTIN_BORDER_FOCUSED,
-  BUILTIN_BORDER_DISABLED,
-  BUILTIN_TEXT,
-  BUILTIN_TEXT_FOCUSED,
-  BUILTIN_TEXT_DISABLED,
-} from '../types.mjs';
+import type { NumberStepperProperties, WindowProperties } from '../types.mjs';
 import { Window } from '../Window.mjs';
-import { Pos } from '../Pos.mjs';
-import { Size } from '../Size.mjs';
-import { StyleRegistry } from '../StyleRegistry.mjs';
 
-export interface NumberStepperOptions extends ControlOptions {
+export interface NumberStepperProperties {
   value?: number;
   min?:   number;
   max?:   number;
@@ -794,62 +690,28 @@ export class NumberStepper extends Window {
   private min:      number;
   private max:      number;
   private step:     number;
-  private focused:  boolean;
-  private disabled: boolean;
   private onChange?: (value: number) => void;
 
-  private normalStyleId:   StyleId;
-  private focusedStyleId:  StyleId;
-  private disabledStyleId: StyleId;
+  // focused, disabled, normalStyleId, focusedStyleId, disabledStyleId — inherited from Window
 
   /** Creates a NumberStepper. Minimum recommended size: width 10, height 3. */
-  public constructor(pos: Pos, size: Size, options?: NumberStepperOptions, registry?: StyleRegistry) {
-    const reg   = registry ?? new StyleRegistry();
-    const bgId  = options?.background
-      ?? reg.getNamed(BUILTIN_WINDOW_BG)
-      ?? reg.register({ background: 237 });
-    const borderColor = options?.disabled
-      ? reg.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-      : reg.getNamedForeground(BUILTIN_BORDER, 240);
+  public constructor(wp: WindowProperties, cp?: NumberStepperProperties) {
+    super({
+      ...wp,
+      defaultBorder: { top: true, right: true, bottom: true, left: true, style: 'rounded' },
+    });
 
-    super(pos, size, {
-      background: bgId,
-      border: {
-        top: true, right: true, bottom: true, left: true,
-        style: 'rounded',
-        color: borderColor,
-      },
-      active: !(options?.disabled ?? false),
-    }, reg);
-
-    this.min      = options?.min      ?? 0;
-    this.max      = options?.max      ?? 99;
-    this.step     = options?.step     ?? 1;
-    this.value    = Math.max(this.min, Math.min(options?.value ?? this.min, this.max));
-    this.focused  = options?.focused  ?? false;
-    this.disabled = options?.disabled ?? false;
-    this.onChange = options?.onChange;
-
-    this.normalStyleId   = reg.getNamed(BUILTIN_TEXT)          ?? reg.register({ foreground: 252 });
-    this.focusedStyleId  = reg.getNamed(BUILTIN_TEXT_FOCUSED)  ?? reg.register({ foreground: 255, bold: true });
-    this.disabledStyleId = reg.getNamed(BUILTIN_TEXT_DISABLED) ?? reg.register({ foreground: 245, dim: true });
+    this.min      = cp?.min  ?? 0;
+    this.max      = cp?.max  ?? 99;
+    this.step     = cp?.step ?? 1;
+    this.value    = Math.max(this.min, Math.min(cp?.value ?? this.min, this.max));
+    this.onChange = cp?.onChange;
   }
 
-  public getValue():  number  { return this.value; }
-  public isFocused(): boolean { return this.focused; }
-  public isDisabled(): boolean { return this.disabled; }
+  public getValue(): number { return this.value; }
 
   public setValue(value: number): void {
     this.value = Math.max(this.min, Math.min(value, this.max));
-  }
-
-  public setFocused(focused: boolean): void {
-    this.focused = focused;
-  }
-
-  public setDisabled(disabled: boolean): void {
-    this.disabled = disabled;
-    this.setActive(!disabled);
   }
 
   public handleKey(key: string): void {
@@ -870,32 +732,20 @@ export class NumberStepper extends Window {
   public override render(): void {
     this.clear();
 
-    // Update border colour based on current state.
-    const borderColor = this.disabled
-      ? this.registry.getNamedForeground(BUILTIN_BORDER_DISABLED, 238)
-      : this.focused
-        ? this.registry.getNamedForeground(BUILTIN_BORDER_FOCUSED, 75)
-        : this.registry.getNamedForeground(BUILTIN_BORDER, 240);
-    this.updateBorder({
-      top: true, right: true, bottom: true, left: true,
-      style: 'rounded',
-      color: borderColor,
-    });
-
     // Draw "◀ value ▶" centred in the inner area.
+    // writeText() auto-picks normal/focused/disabled style — no explicit style needed.
     const { width, height } = this.getInnerSize();
     const label  = `◀ ${this.value} ▶`;
     const labelX = Math.max(0, Math.floor((width - label.length) / 2));
     const labelY = Math.floor(height / 2);
-    const style  = this.disabled ? this.disabledStyleId
-                 : this.focused  ? this.focusedStyleId
-                 : this.normalStyleId;
-    this.writeText(label, { x: labelX, y: labelY, style });
+    this.writeText(label, { x: labelX, y: labelY });
 
     super.render();
   }
 }
 ```
+
+Compare with the old pattern: no `registry` parameter, no `BUILTIN_BORDER_*` imports, no `updateBorder()` call, no manual style selection — all handled by `Window`.
 
 Usage with WindowManager:
 
@@ -910,10 +760,8 @@ const screen  = new Screen();
 const wm      = new WindowManager(screen, { exitKeys: ['\x03'] });
 
 const stepper = new NumberStepper(
-  Pos.center(),
-  new Size(16, 3),
+  { pos: Pos.center(), size: new Size(16, 3) },
   { value: 10, min: 0, max: 99, step: 5, onChange: v => console.error(`value: ${v}`) },
-  screen.getStyleRegistry(),
 );
 screen.addChild(stepper);
 wm.register(stepper);
@@ -1113,7 +961,7 @@ windows:
 
 ## 9. Built-in controls reference
 
-Every control extends `Window` and lives under `src/Screen/controls/`. All of them accept an optional `StyleRegistry` as the final constructor parameter so they can share the Screen's registry and pick up named styles. Size behaviour, interactivity, and key methods are summarised below.
+Every control extends `Window` and lives under `src/Screen/controls/`. Constructor signatures follow the two-argument pattern: `(wp: WindowProperties, cp?: ControlProperties)`. Controls created after `new Screen()` share the Screen's global `StyleRegistry` automatically — no registry parameter needed. Size behaviour, interactivity, and key methods are summarised below.
 
 ### Interactive controls (Focusable — registerable with `WindowManager`)
 
@@ -1135,6 +983,4 @@ Every control extends `Window` and lives under `src/Screen/controls/`. All of th
 | `LineChart` | manual | Line chart using box-drawing characters (`─`, `│`, `╭`, `╮`, `╯`, `╰`) with labelled Y-axis and X-axis. Min height 3, min width 4. | `setData`/`getData`, `setMin`/`setMax` |
 | `BarChart` | manual | Vertical bar chart (`█`) with a one-row label strip at the bottom and configurable bar width. | `setData`/`getData`, `setLabels`, `setMax` |
 
-Read-only controls have no-op `setFocused` and always return `false` from `isFocused()` and `isDisabled()`, so they coexist safely in a `WindowManager.register()` call but never enter the focus cycle.
-
-All controls honour the built-in named style system (section 3): if a `Screen` registry is shared, borders and text colours track `screen.setBuiltinStyle(...)` overrides automatically on the next `render()`.
+All controls honour the built-in named style system (section 3): border colour and text style update automatically on every `render()` via `Window.syncBorderColor()` and `writeText()` auto-style. Override styles globally with `screen.setBuiltinStyle(BUILTIN_BORDER_FOCUSED, { foreground: 214 })`.

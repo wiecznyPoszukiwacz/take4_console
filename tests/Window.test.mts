@@ -1,19 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Window } from '../src/Screen/Window.mjs';
 import { StyleRegistry } from '../src/Screen/StyleRegistry.mjs';
+import { setRegistry } from '../src/Screen/RegistryHolder.mjs';
 import { Pos } from '../src/Screen/Pos.mjs';
 import { Size } from '../src/Screen/Size.mjs';
 
 describe('Window', () => {
   describe('constructor / getSize()', () => {
     it('exposes the dimensions passed to the constructor', () => {
-      const win = new Window(new Pos(0, 0), new Size(30, 10));
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(30, 10) });
       expect(win.getSize()).toEqual({ width: 30, height: 10 });
     });
 
     it('stores absolute position immediately', () => {
-      const parent = new Window(new Pos(0, 0), new Size(100, 100));
-      const child  = new Window(new Pos(5, 3), new Size(10, 4));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(100, 100) });
+      const child  = new Window({ pos: new Pos(5, 3), size: new Size(10, 4) });
       parent.addChild(child);
       expect(child.x).toBe(5);
       expect(child.y).toBe(3);
@@ -26,7 +27,8 @@ describe('Window', () => {
 
     beforeEach(() => {
       reg = new StyleRegistry();
-      win = new Window(new Pos(0, 0), new Size(10, 5), undefined, reg);
+      setRegistry(reg);
+      win = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
     });
 
     it('getCell returns a blank cell after construction', () => {
@@ -78,8 +80,9 @@ describe('Window', () => {
   describe('addChild / render() compositing', () => {
     it('child content appears on parent region at child offset after render', () => {
       const reg    = new StyleRegistry();
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), undefined, reg);
-      const child  = new Window(new Pos(5, 2), new Size(5, 3),  undefined, reg);
+      setRegistry(reg);
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: new Pos(5, 2), size: new Size(5, 3) });
       const boldId = reg.register({ bold: true });
       child.setCell(0, 0, 'A', boldId);
       parent.addChild(child);
@@ -92,8 +95,8 @@ describe('Window', () => {
     });
 
     it('child content outside parent bounds is clipped', () => {
-      const parent = new Window(new Pos(0, 0), new Size(10, 5));
-      const child  = new Window(new Pos(8, 0), new Size(5, 3)); // extends past right edge
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
+      const child  = new Window({ pos: new Pos(8, 0), size: new Size(5, 3) }); // extends past right edge
       child.fill('X');
       parent.addChild(child);
 
@@ -104,9 +107,9 @@ describe('Window', () => {
     });
 
     it('render is recursive – grandchild content propagates to grandparent', () => {
-      const grandparent = new Window(new Pos(0, 0), new Size(20, 10));
-      const parent      = new Window(new Pos(2, 2), new Size(10, 5));
-      const child       = new Window(new Pos(1, 1), new Size(3, 2));
+      const grandparent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const parent      = new Window({ pos: new Pos(2, 2), size: new Size(10, 5) });
+      const child       = new Window({ pos: new Pos(1, 1), size: new Size(3, 2) });
       child.setChar(0, 0, 'G');
       parent.addChild(child);
       grandparent.addChild(parent);
@@ -118,9 +121,9 @@ describe('Window', () => {
     });
 
     it('later children are blitted on top of earlier ones', () => {
-      const parent = new Window(new Pos(0, 0), new Size(10, 5));
-      const bottom = new Window(new Pos(0, 0), new Size(5, 3));
-      const top    = new Window(new Pos(0, 0), new Size(5, 3));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
+      const bottom = new Window({ pos: new Pos(0, 0), size: new Size(5, 3) });
+      const top    = new Window({ pos: new Pos(0, 0), size: new Size(5, 3) });
       bottom.fill('B');
       top.fill('T');
       parent.addChild(bottom);
@@ -132,8 +135,8 @@ describe('Window', () => {
     });
 
     it('parent content set before render is preserved where no child overlaps', () => {
-      const parent = new Window(new Pos(0, 0), new Size(10, 5));
-      const child  = new Window(new Pos(5, 0), new Size(5, 5));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
+      const child  = new Window({ pos: new Pos(5, 0), size: new Size(5, 5) });
       parent.fill('P');
       child.fill('C');
       parent.addChild(child);
@@ -145,8 +148,8 @@ describe('Window', () => {
     });
 
     it('child with Pos.right() is right-aligned after render', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10));
-      const child  = new Window(Pos.right(), new Size(5, 3));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: Pos.right(), size: new Size(5, 3) });
       child.fill('R');
       parent.addChild(child);
       parent.render();
@@ -156,8 +159,8 @@ describe('Window', () => {
     });
 
     it('child with Pos.bottomRight() is bottom-right-aligned after render', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10));
-      const child  = new Window(Pos.bottomRight(), new Size(4, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: Pos.bottomRight(), size: new Size(4, 2) });
       child.fill('Z');
       parent.addChild(child);
       parent.render();
@@ -167,8 +170,8 @@ describe('Window', () => {
     });
 
     it('child with Pos.center() is centered after render', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10));
-      const child  = new Window(Pos.center(), new Size(4, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: Pos.center(), size: new Size(4, 2) });
       child.fill('C');
       parent.addChild(child);
       parent.render();
@@ -179,8 +182,8 @@ describe('Window', () => {
 
   describe('percentage-based sizes', () => {
     it('Size.fill() fills the entire parent', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10));
-      const child  = new Window(Pos.topLeft(), Size.fill());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: Pos.topLeft(), size: Size.fill() });
       parent.addChild(child); // resolves to 20×10
       child.fill('F');
       parent.render();
@@ -189,8 +192,8 @@ describe('Window', () => {
     });
 
     it('Size.fill() in a bordered parent fills only the inner area', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), { border: true });
-      const child  = new Window(Pos.topLeft(), Size.fill());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true });
+      const child  = new Window({ pos: Pos.topLeft(), size: Size.fill() });
       parent.addChild(child); // should resolve to 18×8
       expect(child.getSize()).toEqual({ width: 18, height: 8 });
       child.fill('F');
@@ -208,37 +211,40 @@ describe('Window', () => {
   describe('background option', () => {
     it('fills entire region with background color on render', () => {
       const reg  = new StyleRegistry();
+      setRegistry(reg);
       const bgId = reg.register({ background: 236 });
-      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId }, reg);
+      const win  = new Window({ pos: new Pos(0, 0), size: new Size(5, 3), background: bgId });
       win.render();
       expect(win.getCell(0, 0).attributes.background).toBe(236);
       expect(win.getCell(4, 2).attributes.background).toBe(236);
     });
 
     it('undefined background leaves region blank', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3));
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 3) });
       win.render();
       expect(win.getCell(0, 0)).toEqual({ char: ' ', attributes: {} });
     });
 
     it('StyleId 0 background leaves region blank', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 3), { background: 0 });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 3), background: 0 });
       win.render();
       expect(win.getCell(0, 0)).toEqual({ char: ' ', attributes: {} });
     });
 
     it('inactive window gets dim on background cells', () => {
       const reg  = new StyleRegistry();
+      setRegistry(reg);
       const bgId = reg.register({ background: 236 });
-      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId, active: false }, reg);
+      const win  = new Window({ pos: new Pos(0, 0), size: new Size(5, 3), background: bgId, active: false });
       win.render();
       expect(win.getCell(2, 1).attributes.dim).toBe(true);
     });
 
     it('active window does not get dim on background cells', () => {
       const reg  = new StyleRegistry();
+      setRegistry(reg);
       const bgId = reg.register({ background: 236 });
-      const win  = new Window(new Pos(0, 0), new Size(5, 3), { background: bgId, active: true }, reg);
+      const win  = new Window({ pos: new Pos(0, 0), size: new Size(5, 3), background: bgId, active: true });
       win.render();
       expect(win.getCell(2, 1).attributes.dim).toBeUndefined();
     });
@@ -246,7 +252,7 @@ describe('Window', () => {
 
   describe('border option', () => {
     it('border: true draws all four sides with single style', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: true });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: true });
       win.render();
       expect(win.getCell(0, 0).char).toBe('┌');
       expect(win.getCell(4, 0).char).toBe('┐');
@@ -257,7 +263,7 @@ describe('Window', () => {
     });
 
     it('border: double style uses double-line characters', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: { top: true, right: true, bottom: true, left: true, style: 'double' } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'double' } });
       win.render();
       expect(win.getCell(0, 0).char).toBe('╔');
       expect(win.getCell(4, 0).char).toBe('╗');
@@ -266,7 +272,7 @@ describe('Window', () => {
     });
 
     it('border: rounded style uses rounded corners', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: { top: true, right: true, bottom: true, left: true, style: 'rounded' } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'rounded' } });
       win.render();
       expect(win.getCell(0, 0).char).toBe('╭');
       expect(win.getCell(4, 0).char).toBe('╮');
@@ -275,7 +281,7 @@ describe('Window', () => {
     });
 
     it('only top border draws a horizontal line without corners', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: { top: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true } });
       win.render();
       expect(win.getCell(0, 0).char).toBe('─');
       expect(win.getCell(4, 0).char).toBe('─');
@@ -283,7 +289,7 @@ describe('Window', () => {
     });
 
     it('only top+bottom borders skip left and right vertical lines', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: { top: true, bottom: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, bottom: true } });
       win.render();
       expect(win.getCell(0, 0).char).toBe('─');
       expect(win.getCell(0, 3).char).toBe('─');
@@ -291,19 +297,19 @@ describe('Window', () => {
     });
 
     it('border is skipped when window is 1×1', () => {
-      const win = new Window(new Pos(0, 0), new Size(1, 1), { border: true });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(1, 1), border: true });
       win.render();
       expect(win.getCell(0, 0).char).toBe(' ');
     });
 
     it('top border only requires height >= 1', () => {
-      const win = new Window(new Pos(0, 0), new Size(3, 1), { border: { top: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(3, 1), border: { top: true } });
       win.render();
       expect(win.getCell(1, 0).char).toBe('─');
     });
 
     it('bottom border is skipped when height < 2', () => {
-      const win = new Window(new Pos(0, 0), new Size(3, 1), { border: { top: true, bottom: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(3, 1), border: { top: true, bottom: true } });
       win.render();
       expect(win.getCell(1, 0).char).toBe('─'); // top drawn
       // height is 1, so bottom would overlap top – skipped
@@ -316,7 +322,8 @@ describe('Window', () => {
 
     beforeEach(() => {
       reg = new StyleRegistry();
-      win = new Window(new Pos(0, 0), new Size(10, 5), undefined, reg);
+      setRegistry(reg);
+      win = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
     });
 
     it('writes from (0,0) by default', () => {
@@ -356,7 +363,7 @@ describe('Window', () => {
     });
 
     it('characters beyond window width are silently clipped', () => {
-      const narrow = new Window(new Pos(0, 0), new Size(5, 3));
+      const narrow = new Window({ pos: new Pos(0, 0), size: new Size(5, 3) });
       expect(() => narrow.writeText('hello world')).not.toThrow();
       expect(narrow.getCell(4, 0).char).toBe('o');
     });
@@ -366,7 +373,7 @@ describe('Window', () => {
     });
 
     it('writeText(0,0) in a bordered window lands inside the border', () => {
-      const bordered = new Window(new Pos(0, 0), new Size(10, 5), { border: true });
+      const bordered = new Window({ pos: new Pos(0, 0), size: new Size(10, 5), border: true });
       bordered.writeText('hi');
       bordered.render();
       // border at row 0 – content should start at (1,1)
@@ -377,7 +384,7 @@ describe('Window', () => {
     });
 
     it('writeText with explicit coords are relative to inner area', () => {
-      const bordered = new Window(new Pos(0, 0), new Size(10, 5), { border: true });
+      const bordered = new Window({ pos: new Pos(0, 0), size: new Size(10, 5), border: true });
       bordered.writeText('AB', { x: 1, y: 1 });
       bordered.render();
       // inner (1,1) maps to absolute (2,2)
@@ -387,7 +394,7 @@ describe('Window', () => {
 
     it('writeText clips at inner area boundary, not at full window boundary', () => {
       // window 6 wide, full border → inner width = 4
-      const bordered = new Window(new Pos(0, 0), new Size(6, 4), { border: true });
+      const bordered = new Window({ pos: new Pos(0, 0), size: new Size(6, 4), border: true });
       bordered.writeText('ABCDE'); // 5 chars, only 4 fit inside
       bordered.render();
       expect(bordered.getCell(1, 1).char).toBe('A');
@@ -399,25 +406,25 @@ describe('Window', () => {
 
   describe('getInnerOffset / getInnerSize', () => {
     it('no border → offset (0,0) and size equals full size', () => {
-      const win = new Window(new Pos(0, 0), new Size(10, 5));
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 5) });
       expect(win.getInnerOffset()).toEqual({ x: 0, y: 0 });
       expect(win.getInnerSize()).toEqual({ width: 10, height: 5 });
     });
 
     it('full border → offset (1,1) and size shrunk by 2 on each axis', () => {
-      const win = new Window(new Pos(0, 0), new Size(10, 6), { border: true });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 6), border: true });
       expect(win.getInnerOffset()).toEqual({ x: 1, y: 1 });
       expect(win.getInnerSize()).toEqual({ width: 8, height: 4 });
     });
 
     it('top-only border → offset (0,1) and height reduced by 1', () => {
-      const win = new Window(new Pos(0, 0), new Size(10, 6), { border: { top: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 6), border: { top: true } });
       expect(win.getInnerOffset()).toEqual({ x: 0, y: 1 });
       expect(win.getInnerSize()).toEqual({ width: 10, height: 5 });
     });
 
     it('left+right border only → offset (1,0) and width reduced by 2', () => {
-      const win = new Window(new Pos(0, 0), new Size(10, 6), { border: { left: true, right: true } });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 6), border: { left: true, right: true } });
       expect(win.getInnerOffset()).toEqual({ x: 1, y: 0 });
       expect(win.getInnerSize()).toEqual({ width: 8, height: 6 });
     });
@@ -425,8 +432,8 @@ describe('Window', () => {
 
   describe('decoration-aware child positioning', () => {
     it('absolute child in bordered parent is offset by border', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), { border: true });
-      const child  = new Window(new Pos(2, 3), new Size(4, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true });
+      const child  = new Window({ pos: new Pos(2, 3), size: new Size(4, 2) });
       parent.addChild(child);
       // inner offset (1,1) + child pos (2,3)
       expect(child.x).toBe(3);
@@ -434,8 +441,8 @@ describe('Window', () => {
     });
 
     it('Pos.center() in bordered parent centers within inner area', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), { border: true });
-      const child  = new Window(Pos.center(), new Size(4, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true });
+      const child  = new Window({ pos: Pos.center(), size: new Size(4, 2) });
       parent.addChild(child);
       // inner 18×8, child 4×2: floor((18-4)/2)=7, floor((8-2)/2)=3 → +offset(1,1) → (8,4)
       expect(child.x).toBe(8);
@@ -443,8 +450,8 @@ describe('Window', () => {
     });
 
     it('child content lands inside border after render', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), { border: true });
-      const child  = new Window(new Pos(0, 0), new Size(3, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true });
+      const child  = new Window({ pos: new Pos(0, 0), size: new Size(3, 2) });
       child.fill('X');
       parent.addChild(child);
       parent.render();
@@ -455,8 +462,8 @@ describe('Window', () => {
     });
 
     it('Pos.bottomRight() in bordered parent aligns to inner bottom-right', () => {
-      const parent = new Window(new Pos(0, 0), new Size(20, 10), { border: true });
-      const child  = new Window(Pos.bottomRight(), new Size(3, 2));
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true });
+      const child  = new Window({ pos: Pos.bottomRight(), size: new Size(3, 2) });
       child.fill('Z');
       parent.addChild(child);
       parent.render();
@@ -470,35 +477,35 @@ describe('Window', () => {
 
   describe('active / inactive', () => {
     it('inactive border gets dim attribute', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: true, active: false });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: true, active: false });
       win.render();
       expect(win.getCell(0, 0).attributes.dim).toBe(true);
       expect(win.getCell(2, 0).attributes.dim).toBe(true);
     });
 
     it('active border does not get dim attribute', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: true, active: true });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: true, active: true });
       win.render();
       expect(win.getCell(0, 0).attributes.dim).toBeUndefined();
     });
 
     it('setActive(false) makes border dim on next render', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: true });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: true });
       win.setActive(false);
       win.render();
       expect(win.getCell(0, 0).attributes.dim).toBe(true);
     });
 
     it('setActive(true) removes dim from border on next render', () => {
-      const win = new Window(new Pos(0, 0), new Size(5, 4), { border: true, active: false });
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: true, active: false });
       win.setActive(true);
       win.render();
       expect(win.getCell(0, 0).attributes.dim).toBeUndefined();
     });
 
     it('children are not affected by parent active state', () => {
-      const parent = new Window(new Pos(0, 0), new Size(10, 5), { active: false });
-      const child  = new Window(new Pos(1, 1), new Size(3, 2), { border: true, active: true });
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 5), active: false });
+      const child  = new Window({ pos: new Pos(1, 1), size: new Size(3, 2), border: true, active: true });
       parent.addChild(child);
       parent.render();
       // child's top-left corner should not be dim
