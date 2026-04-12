@@ -1,6 +1,157 @@
 # take4-console
 
-A terminal cell-grid rendering engine for Node.js. Everything is a `Window`.
+A terminal cell-grid rendering library for Node.js. Build rich text-mode
+interfaces out of nested `Window`s with styles, borders, percentage layouts,
+focus-aware keyboard/mouse input, and a YAML-driven layout builder.
+
+Ships 15 built-in controls — buttons, text inputs, checkboxes, radios,
+listboxes, tabs, status LEDs, progress bars, line/bar/sparkline charts,
+spinners — and an extension API for adding your own. Pure ESM, TypeScript
+first, zero runtime dependencies besides a YAML parser, one `stdout.write()`
+per frame.
+
+> **Requirements:** Node.js ≥ 18, a terminal that supports ANSI escape
+> sequences and 256-colour / 24-bit colour. NerdFonts glyphs are supported
+> (box-drawing, braille, block characters).
+
+---
+
+## Installation
+
+```bash
+npm install take4-console
+```
+
+The package is published as an **ES module** — use `import`, not `require`.
+TypeScript declarations ship inside the package (`dist/index.d.mts`), so no
+`@types/...` companion is needed.
+
+---
+
+## Quick start
+
+```typescript
+import {
+  Screen,
+  WindowManager,
+  Button,
+  TextBox,
+  Pos,
+  Size,
+} from 'take4-console';
+
+// 1. Create the root screen — sized automatically to the terminal.
+const screen = new Screen();
+screen.fill(' ', screen.registerStyle({ background: 234 }));
+
+// 2. Add a couple of controls. Controls share the screen's style registry
+//    so they can resolve built-in named styles.
+const registry = screen.getStyleRegistry();
+
+const name = new TextBox(
+  new Pos(2, 2),
+  new Size(30, 3),
+  { placeholder: 'your name' },
+  registry,
+);
+screen.addChild(name);
+
+const ok = new Button(
+  new Pos(2, 6),
+  new Size(10, 3),
+  { label: 'OK', onPress: () => console.error(`hello, ${name.getValue()}`) },
+  registry,
+);
+screen.addChild(ok);
+
+// 3. Start the input loop. Tab cycles focus; q / Ctrl+C exits.
+const wm = new WindowManager(screen, {
+  exitKeys: ['q', '\x03'],
+  onExit:   () => process.exit(0),
+  mouse:    true,
+});
+wm.register(name);
+wm.register(ok);
+wm.run();
+```
+
+Or build the same UI declaratively from a YAML file via `InterfaceBuilder`
+— see [section 7](#7-yaml--interfacebuilder-integration).
+
+---
+
+## Public API
+
+Every symbol below is exported from the package root:
+
+```typescript
+import {
+  // ── Core ───────────────────────────────────────────────────────────────
+  Screen, Window, Region, StyleRegistry, WindowManager,
+
+  // ── Geometry ───────────────────────────────────────────────────────────
+  Pos, Size, Pct, pct,
+
+  // ── Interactive controls (focusable) ───────────────────────────────────
+  Button, TextBox, TextArea, Checkbox, Radio, ListBox, Tabs,
+
+  // ── Read-only display controls ─────────────────────────────────────────
+  StatusLED, ProgressBar, ProgressBarV,
+  LineChart, BarChart, Sparkline, Spinner,
+
+  // ── YAML layout builder ────────────────────────────────────────────────
+  InterfaceBuilder,
+
+  // ── Built-in style name constants ──────────────────────────────────────
+  BUILTIN_WINDOW_BG,
+  BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED,
+  BUILTIN_TEXT,   BUILTIN_TEXT_FOCUSED,   BUILTIN_TEXT_DISABLED,
+  BUILTIN_TEXT_PLACEHOLDER, BUILTIN_TEXT_CHECKED, BUILTIN_CURSOR,
+} from 'take4-console';
+
+import type {
+  // Primitives
+  Color, StyleId, Cell, CellAttributes, TerminalSize,
+
+  // Window / border
+  BorderStyle, WindowBorder, WindowOptions, WriteTextOptions,
+
+  // Control option interfaces
+  ControlOptions,
+  ButtonOptions, TextBoxOptions, TextAreaOptions,
+  CheckboxOptions, RadioOptions,
+  StatusLEDOptions, ProgressBarOptions, ProgressBarVOptions,
+  LineChartOptions, BarChartOptions,
+  ListBoxOptions, TabsOptions, SparklineOptions, SpinnerOptions,
+
+  // Focus & input
+  Focusable, TerminalMouseEvent, WindowManagerOptions,
+
+  // YAML schema
+  YamlLayout, YamlWindowDef, YamlPosSpec, YamlSizeSpec,
+  YamlWindowType, YamlStyleDef, YamlAxisValue,
+} from 'take4-console';
+```
+
+Full control reference is in [section 9](#9-built-in-controls-reference);
+style names are in [section 8](#8-built-in-style-reference); YAML layouts
+in [section 7](#7-yaml--interfacebuilder-integration).
+
+---
+
+## Running the bundled demo
+
+The repository ships a live demo that exercises every built-in control:
+
+```bash
+git clone https://github.com/arcymag/take4-console.git
+cd take4-console
+npm install
+npm run demo          # tsx src/demo.mts
+```
+
+Press `q` or `Ctrl+C` to exit. The demo's source (`src/demo.mts`) and layout
+(`src/layout.yaml`) are good starting points for your own application.
 
 ---
 
@@ -24,6 +175,17 @@ A terminal cell-grid rendering engine for Node.js. Everything is a `Window`.
 7. [YAML / InterfaceBuilder integration](#7-yaml--interfacebuilder-integration)
 8. [Built-in style reference](#8-built-in-style-reference)
 9. [Built-in controls reference](#9-built-in-controls-reference)
+
+> **Note on import paths.** Examples in sections 4–6 use **relative imports**
+> (e.g. `from '../Window.mjs'`) because they show how to build a new control
+> *inside this repository*. If you are extending the library from an external
+> package, substitute `from 'take4-console'` instead.
+
+---
+
+## License
+
+MIT © Jarosław Mężyk
 
 ---
 

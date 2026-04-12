@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.12.0] – 2026-04-12
+
+### Added
+- **Library packaging** – the project now ships as a reusable npm package:
+  - New `src/index.mts` barrel re-exports every public class, type, and
+    built-in style constant (`Screen`, `Window`, `WindowManager`, all 15
+    controls, `InterfaceBuilder`, `Pos`/`Size`/`Pct`/`pct`, all `*Options`
+    interfaces, YAML schema types, `BUILTIN_*` constants)
+  - `package.json` fields for publishing: `exports` map (ESM-only with
+    type-aware conditional exports), `types`, `module`, `files`,
+    `sideEffects: false`, `engines: node >= 18`, `keywords`, `repository`,
+    `bugs`, `homepage`, `license`, `author`, and a `prepublishOnly` script
+    that runs build + tests
+  - `LICENSE` file (MIT)
+- `npm run demo` script – alias for the tsx-based dev command
+
+### Changed
+- **Demo entry point** moved from `src/index.mts` to `src/demo.mts`. The
+  library's `main`/`exports` now point at `dist/index.mjs` (the barrel),
+  so `import { Screen } from 'take4-console'` no longer accidentally runs
+  the demo — **breaking change for anyone importing the old internal
+  index.mts path**
+- `tsconfig.json` excludes `src/demo.mts` from the library build (the demo
+  is tsx-only so `layout.yaml` keeps resolving from `src/` via
+  `import.meta.url`)
+- README rewritten with an **Installation**, **Quick start**, **Public
+  API**, and **Running the bundled demo** section at the top; the
+  existing architecture / custom-control / YAML reference content is kept
+  below with a note that the example imports use relative paths because
+  they target in-repo extension
+
+---
+
+## [0.11.0] – 2026-04-12
+
+### Added
+- **`ListBox`** – scrollable, focusable list of single-line items; supports ↑/↓, Home/End, PgUp/PgDn with automatic scrolling; emits `onChange(index, item)` when the selection moves
+- **`Tabs`** – tabbed container that renders a header row and composites only the children tagged to the active tab; focusable with ←/→ to cycle tabs; new `addChildToTab(tabIndex, child)` API tags children without affecting standard `addChild()` semantics
+- **`Sparkline`** – read-only one-row inline chart built from the eight-level block-character ramp (` ▁▂▃▄▅▆▇█`); supports width/data resampling via linear interpolation
+- **`Spinner`** – read-only animated loader with five built-in frame styles (`braille`, `dots`, `line`, `circle`, `arrow`); advances via `step()` driven by an external clock; supports optional label to the right of the glyph
+- New option interfaces: `ListBoxOptions`, `TabsOptions`, `SparklineOptions`, `SpinnerOptions`
+- Extended `YamlWindowType` with `listbox`, `tabs`, `sparkline`, `spinner`
+- New `YamlWindowDef.tab` field – when the parent is a `Tabs` control, children with a `tab:` field are routed through `addChildToTab()` automatically
+
+### Changed
+- **`LineChart.render()`** – rewrote the plotting pipeline: every plot column now receives an interpolated row via linear interpolation between data samples, and vertical transitions are drawn as self-contained steps (`╯│╭` / `╮│╰`) instead of disjoint per-data-point cells. Fixes the "jagged" / disconnected appearance when plot width exceeds the data-point count. The buggy `selectLineChar` enter/exit lookup table (which had `up`/`down` corner characters swapped) has been removed entirely.
+- **Demo (`index.mts` + `layout.yaml`)** – added a `LIVE` braille spinner to the header, replaced the bottom-right charts panel with a three-tab `Tabs` control (Charts / Trends / Events) showing the original `LineChart`+`BarChart` on tab 0, three stacked `Sparkline` histories on tab 1, and a scrolling `ListBox` event log on tab 2. The timer now advances the spinner, shifts rolling sparkline buffers in sync with the progress bars, and prepends timestamped log entries to the event list.
+
+---
+
 ## [0.10.0] – 2026-04-12
 
 ### Added

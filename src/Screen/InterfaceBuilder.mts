@@ -25,6 +25,10 @@ import { ProgressBar }  from './controls/ProgressBar.mjs';
 import { ProgressBarV } from './controls/ProgressBarV.mjs';
 import { LineChart }    from './controls/LineChart.mjs';
 import { BarChart }     from './controls/BarChart.mjs';
+import { ListBox }      from './controls/ListBox.mjs';
+import { Tabs }         from './controls/Tabs.mjs';
+import { Sparkline }    from './controls/Sparkline.mjs';
+import { Spinner }      from './controls/Spinner.mjs';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -318,6 +322,61 @@ export class InterfaceBuilder {
         break;
       }
 
+      case 'listbox': {
+        const changeCb = def.onChange ? this.callbacks.get(def.onChange) : undefined;
+        const lb = new ListBox(pos, this.requireSize(def), {
+          ...baseOpts,
+          items:         def.items,
+          selectedIndex: def.selectedIndex,
+          focused:       def.focused,
+          disabled:      def.disabled,
+          onChange:      changeCb ? (idx: number, item: string) => changeCb(idx, item) : undefined,
+        }, registry);
+        pending.push({ control: lb, parents: [...parentChain] });
+        win = lb;
+        break;
+      }
+
+      case 'tabs': {
+        const changeCb = def.onChange ? this.callbacks.get(def.onChange) : undefined;
+        const tabs = new Tabs(pos, this.requireSize(def), {
+          ...baseOpts,
+          titles:      def.titles,
+          activeIndex: def.activeIndex,
+          focused:     def.focused,
+          disabled:    def.disabled,
+          onChange:    changeCb ? (idx: number, title: string) => changeCb(idx, title) : undefined,
+        }, registry);
+        pending.push({ control: tabs, parents: [...parentChain] });
+        win = tabs;
+        break;
+      }
+
+      case 'sparkline': {
+        const sp = new Sparkline(pos, this.requireSize(def), {
+          ...baseOpts,
+          data:  def.data,
+          min:   def.min,
+          max:   def.max,
+          color: def.chartColor,
+        }, registry);
+        win = sp;
+        break;
+      }
+
+      case 'spinner': {
+        const sp = new Spinner(pos, {
+          ...baseOpts,
+          style:   def.spinnerStyle,
+          label:   def.label,
+          frame:   def.frame,
+          running: def.running,
+          color:   def.chartColor,
+        }, registry);
+        win = sp;
+        break;
+      }
+
       default: {
         win = new Window(pos, this.requireSize(def), baseOpts, registry);
         break;
@@ -331,7 +390,11 @@ export class InterfaceBuilder {
     if (def.children) {
       for (const childDef of def.children) {
         const child = this.buildNode(childDef, registry, result, pending, contentWrites, [win, ...parentChain]);
-        win.addChild(child);
+        if (win instanceof Tabs && childDef.tab !== undefined) {
+          win.addChildToTab(childDef.tab, child);
+        } else {
+          win.addChild(child);
+        }
       }
     }
 

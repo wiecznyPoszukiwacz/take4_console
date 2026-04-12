@@ -199,6 +199,52 @@ export interface LineChartOptions extends WindowOptions {
   color?: number;
 }
 
+/** Options for the ListBox control. */
+export interface ListBoxOptions extends ControlOptions {
+  /** Initial items shown in the list. Default: []. */
+  items?: string[];
+  /** Initial selected index, or -1 for no selection. Default: 0 if items is non-empty, else -1. */
+  selectedIndex?: number;
+  /** Called when the selected index changes via handleKey(). */
+  onChange?: (index: number, item: string) => void;
+}
+
+/** Options for the Tabs control. */
+export interface TabsOptions extends ControlOptions {
+  /** Tab titles shown in the header row. Default: []. */
+  titles?: string[];
+  /** Initially active tab index. Default: 0. */
+  activeIndex?: number;
+  /** Called when the active tab changes via handleKey(). */
+  onChange?: (index: number, title: string) => void;
+}
+
+/** Options for the Sparkline control. */
+export interface SparklineOptions extends WindowOptions {
+  /** Data values to plot as a one-row block-character chart. Default: []. */
+  data?: number[];
+  /** Minimum Y value; if omitted, derived from data. */
+  min?: number;
+  /** Maximum Y value; if omitted, derived from data. */
+  max?: number;
+  /** ANSI color number for the sparkline glyphs. Default: 75. */
+  color?: number;
+}
+
+/** Options for the Spinner control. */
+export interface SpinnerOptions extends WindowOptions {
+  /** Visual style of the spinner animation. Default: 'braille'. */
+  style?: 'braille' | 'dots' | 'line' | 'circle' | 'arrow';
+  /** Label text shown to the right of the spinner glyph. Default: ''. */
+  label?: string;
+  /** Initial frame index. Default: 0. */
+  frame?: number;
+  /** Whether the spinner is actively animating. Default: true. */
+  running?: boolean;
+  /** ANSI color number for the spinner glyph. Default: 75. */
+  color?: number;
+}
+
 /** Options for the BarChart control. */
 export interface BarChartOptions extends WindowOptions {
   /** Data values for each bar. Default: []. */
@@ -236,7 +282,8 @@ export type YamlSizeSpec =
 
 /** Control type tags supported by InterfaceBuilder. */
 export type YamlWindowType = 'window' | 'button' | 'textbox' | 'textarea' | 'checkbox' | 'radio'
-  | 'statusled' | 'progressbar' | 'progressbarv' | 'linechart' | 'barchart';
+  | 'statusled' | 'progressbar' | 'progressbarv' | 'linechart' | 'barchart'
+  | 'listbox' | 'tabs' | 'sparkline' | 'spinner';
 
 /** A named style entry in the YAML layout's `styles:` section. Extends CellAttributes with a required name. */
 export interface YamlStyleDef extends CellAttributes {
@@ -302,6 +349,22 @@ export interface YamlWindowDef {
   chartColor?: number;
   /** Width of each bar in BarChart columns. Default: 1. */
   barWidth?: number;
+  /** Items shown in a ListBox. */
+  items?: string[];
+  /** Initial selection index for ListBox. */
+  selectedIndex?: number;
+  /** Tab titles for a Tabs control. */
+  titles?: string[];
+  /** Initially active tab index for a Tabs control. */
+  activeIndex?: number;
+  /** Visual style for Spinner animation. */
+  spinnerStyle?: 'braille' | 'dots' | 'line' | 'circle' | 'arrow';
+  /** Initial frame index for Spinner. */
+  frame?: number;
+  /** Whether Spinner is actively animating. */
+  running?: boolean;
+  /** Tab index this child belongs to when its parent is a Tabs control. */
+  tab?: number;
 }
 
 /** Top-level YAML layout document consumed by InterfaceBuilder. */

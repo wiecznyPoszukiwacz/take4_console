@@ -83,7 +83,7 @@ All interfaces and type aliases live here. Notable:
 - `WindowOptions` – constructor options: `background` (`StyleId`), `border`, `active`
 - `WriteTextOptions` – `{ x?, y?, style?: StyleId }`
 - `WindowBorder` – per-side flags + `style` (`single`/`double`/`rounded`) + `color`
-- Per-control option interfaces: `ButtonOptions`, `TextBoxOptions`, `TextAreaOptions`, `CheckboxOptions`, `RadioOptions`, `StatusLEDOptions`, `ProgressBarOptions`, `ProgressBarVOptions`, `LineChartOptions`, `BarChartOptions`
+- Per-control option interfaces: `ButtonOptions`, `TextBoxOptions`, `TextAreaOptions`, `CheckboxOptions`, `RadioOptions`, `StatusLEDOptions`, `ProgressBarOptions`, `ProgressBarVOptions`, `LineChartOptions`, `BarChartOptions`, `ListBoxOptions`, `TabsOptions`, `SparklineOptions`, `SpinnerOptions`
 - `BUILTIN_*` string constants (`BUILTIN_WINDOW_BG`, `BUILTIN_BORDER`, …) – names for the ten default styles pre-registered by `Screen`; controls look them up via `registry.getNamed(...)` with hardcoded fallbacks
 
 ### Controls (`src/Screen/controls/`)
@@ -95,20 +95,25 @@ All controls extend `Window`. Constructor signature: `(pos, size?, options?, reg
 - `TextArea` – multi-line text input with 2-D cursor
 - `Checkbox` – `[✓]/[ ]` toggle, auto-sized to label
 - `Radio` – `(●)/( )` single-selection, auto-sized to label
+- `ListBox` (added 0.11.0) – scrollable list; ↑/↓/PgUp/PgDn/Home/End; `onChange(index, item)`
+- `Tabs` (added 0.11.0) – tabbed container; ←/→ to cycle; per-child tagging via `addChildToTab(index, child)`; only the active tab's children are composited on render
 
-**Read-only display (added 0.10.0):**
-- `StatusLED` – coloured dot + optional label (`ok`/`warn`/`error`/`off`)
-- `ProgressBar` – horizontal block-character bar with percentage label
-- `ProgressBarV` – vertical block-character bar filling from the bottom
-- `LineChart` – line chart with labelled Y-axis and X-axis, box-drawing chars
-- `BarChart` – vertical bar chart with per-bar labels
+**Read-only display:**
+- `StatusLED` (0.10.0) – coloured dot + optional label (`ok`/`warn`/`error`/`off`)
+- `ProgressBar` (0.10.0) – horizontal block-character bar with percentage label
+- `ProgressBarV` (0.10.0) – vertical block-character bar filling from the bottom
+- `LineChart` (0.10.0) – line chart with labelled Y-axis and X-axis, box-drawing chars
+- `BarChart` (0.10.0) – vertical bar chart with per-bar labels
+- `Sparkline` (0.11.0) – one-row inline chart using the eight-level block-character ramp (` ▁▂▃▄▅▆▇█`)
+- `Spinner` (0.11.0) – animated loader; styles: `braille`/`dots`/`line`/`circle`/`arrow`; advanced manually via `step()`
 
 Read-only controls return `false` from `isFocused()`/`isDisabled()` and ignore `setFocused()`.
 
 ### InterfaceBuilder (`src/Screen/InterfaceBuilder.mts`)
 Builds a window tree from a YAML description. `build(yamlText, screen, wm?)` / `buildFromFile(path, screen, wm?)` return `Map<string, Window>` keyed by YAML `id`.
 
-- Supports all 11 built-in control classes via `type:` (`window`, `button`, `textbox`, `textarea`, `checkbox`, `radio`, `statusled`, `progressbar`, `progressbarv`, `linechart`, `barchart`)
+- Supports all 15 built-in control classes via `type:` (`window`, `button`, `textbox`, `textarea`, `checkbox`, `radio`, `statusled`, `progressbar`, `progressbarv`, `linechart`, `barchart`, `listbox`, `tabs`, `sparkline`, `spinner`)
+- `tab: N` on a child routes it through `addChildToTab(N, child)` when the immediate parent is a `Tabs` control
 - Optional top-level `styles:` section registers named styles (including built-in overrides) before windows are built
 - `registerCallback(id, fn)` wires `onPress` / `onChange` YAML fields to runtime callbacks
 - Focusable controls are auto-registered with the `WindowManager` after the tree is built

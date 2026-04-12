@@ -5,22 +5,6 @@ import { Pos } from '../Pos.mjs';
 import { Size } from '../Size.mjs';
 import { StyleRegistry } from '../StyleRegistry.mjs';
 
-/** Direction of the line segment relative to the current data point. */
-type Direction = 'up' | 'down' | 'flat';
-
-/** Maps (enter direction, exit direction) to a box-drawing character. */
-function selectLineChar(enter: Direction, exit: Direction): string {
-	if (enter === 'flat'  && exit === 'flat')  return '─';
-	if (enter === 'flat'  && exit === 'up')    return '╭';
-	if (enter === 'flat'  && exit === 'down')  return '╰';
-	if (enter === 'up'    && exit === 'flat')  return '╯';
-	if (enter === 'down'  && exit === 'flat')  return '╮';
-	if (enter === 'up'    && exit === 'up')    return '│';
-	if (enter === 'down'  && exit === 'down')  return '│';
-	// Peak (up→down) or valley (down→up): render as horizontal pass
-	return '─';
-}
-
 /** Formats a Y-axis label value as a compact string. */
 function formatYLabel(value: number): string {
 	if (Number.isInteger(value)) return String(value);
@@ -139,27 +123,14 @@ export class LineChart extends Window {
 			return;
 		}
 
-		// ── 4. Map data points to (col, row) in plot space ────────────────────────
 		/** Maps a value to a plot row (0 = top = dataMax). */
 		const valueToRow = (v: number): number => {
-			if (dataRange === 0) return Math.floor(plotH / 2);
+			if (dataRange === 0) return Math.floor((plotH - 1) / 2);
 			const norm = Math.min(1, Math.max(0, (v - dataMin) / dataRange));
 			return (plotH - 1) - Math.round(norm * (plotH - 1));
 		};
 
-		/** Maps a data index to a plot column. */
-		const indexToCol = (i: number): number => {
-			if (this.data.length <= 1) return 0;
-			return Math.round((i / (this.data.length - 1)) * (plotW - 1));
-		};
-
-		// Group by column (last point wins on collision)
-		const colToRow = new Map<number, number>();
-		for (let i = 0; i < this.data.length; i++) {
-			colToRow.set(indexToCol(i), valueToRow(this.data[i]));
-		}
-
-		// ── 5. Draw Y-axis ────────────────────────────────────────────────────────
+		// ── 4. Draw Y-axis ────────────────────────────────────────────────────────
 		const yAxisAbsX = ox + yLabelWidth - 1;  // column of '┤' / '│'
 
 		// Draw vertical line for all plot rows
@@ -181,7 +152,7 @@ export class LineChart extends Window {
 			}
 		}
 
-		// ── 6. Draw X-axis ────────────────────────────────────────────────────────
+		// ── 5. Draw X-axis ────────────────────────────────────────────────────────
 		const xAxisAbsY = oy + plotH;
 		for (let col = 0; col < plotW; col++) {
 			const absX = ox + yLabelWidth + col;
@@ -190,38 +161,63 @@ export class LineChart extends Window {
 		// Y-axis bottom corner
 		this.setCell(yAxisAbsX, xAxisAbsY, '┼', this.axisStyleId);
 
-		// ── 7. Draw line segments ────────────────────────────────────────────────
+		// ── 6. Plot the line ──────────────────────────────────────────────────────
 		if (this.data.length === 0) {
 			super.render();
 			return;
 		}
 
-		const sortedCols = [...colToRow.keys()].sort((a, b) => a - b);
+		// Build an interpolated row index for every plot column. With more
+		// columns than data points, this upsamples the series; with fewer,
+		// it averages between adjacent samples.
+		const dataRow: number[] = new Array(plotW);
+		if (this.data.length === 1) {
+			const r0 = valueToRow(this.data[0]);
+			for (let c = 0; c < plotW; c++) dataRow[c] = r0;
+		} else {
+			for (let c = 0; c < plotW; c++) {
+				const t    = (c / (plotW - 1)) * (this.data.length - 1);
+				const i0   = Math.floor(t);
+				const i1   = Math.min(i0 + 1, this.data.length - 1);
+				const frac = t - i0;
+				const v    = this.data[i0] * (1 - frac) + this.data[i1] * frac;
+				dataRow[c] = valueToRow(v);
+			}
+		}
 
-		for (let idx = 0; idx < sortedCols.length; idx++) {
-			const c     = sortedCols[idx];
-			const r     = colToRow.get(c)!;
-			const rPrev = idx > 0                      ? colToRow.get(sortedCols[idx - 1])! : r;
-			const rNext = idx < sortedCols.length - 1  ? colToRow.get(sortedCols[idx + 1])! : r;
+		/** Draws a single line cell in plot space. */
+		const plot = (col: number, row: number, ch: string): void => {
+			this.setCell(ox + yLabelWidth + col, oy + row, ch, this.lineStyleId);
+		};
 
-			// Entry direction (from previous column to current row)
-			const enter: Direction = rPrev > r ? 'up' : rPrev < r ? 'down' : 'flat';
-			// Exit direction (from current row to next column)
-			const exit:  Direction = rNext < r ? 'up' : rNext > r ? 'down' : 'flat';
+		// Each column either holds a flat horizontal segment or a self-contained
+		// vertical step bridging the previous column's row to this column's row.
+		// The first column has no incoming step.
+		plot(0, dataRow[0], '─');
 
-			const ch    = selectLineChar(enter, exit);
-			const absX  = ox + yLabelWidth + c;
-			const absY  = oy + r;
-			this.setCell(absX, absY, ch, this.lineStyleId);
+		for (let c = 1; c < plotW; c++) {
+			const inRow  = dataRow[c - 1];
+			const outRow = dataRow[c];
 
-			// Fill vertical segment in this column for the exit direction
-			if (idx < sortedCols.length - 1) {
-				const rN  = colToRow.get(sortedCols[idx + 1])!;
-				const top = Math.min(r, rN) + 1;
-				const bot = Math.max(r, rN) - 1;
-				for (let row = top; row <= bot; row++) {
-					this.setCell(ox + yLabelWidth + c, oy + row, '│', this.lineStyleId);
-				}
+			if (inRow === outRow) {
+				plot(c, outRow, '─');
+				continue;
+			}
+
+			const top = Math.min(inRow, outRow);
+			const bot = Math.max(inRow, outRow);
+
+			if (outRow < inRow) {
+				// Going up: line enters from left at the bottom, exits right at the top.
+				plot(c, bot, '╯');  // LEFT + TOP
+				plot(c, top, '╭');  // BOTTOM + RIGHT
+			} else {
+				// Going down: line enters from left at the top, exits right at the bottom.
+				plot(c, top, '╮');  // LEFT + BOTTOM
+				plot(c, bot, '╰');  // TOP + RIGHT
+			}
+			for (let row = top + 1; row < bot; row++) {
+				plot(c, row, '│');
 			}
 		}
 

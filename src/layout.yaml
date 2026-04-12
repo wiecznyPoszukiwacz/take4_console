@@ -3,6 +3,13 @@ windows:
     pos: topLeft
     size: { fillWidth: 1 }
     background: 24
+    children:
+      - id: headerSpinner
+        type: spinner
+        pos: { x: -1, y: 0 }
+        spinnerStyle: braille
+        label: "LIVE"
+        chartColor: 231
 
   - id: statusBar
     pos: { preset: bottom }
@@ -149,23 +156,66 @@ windows:
             max: 100
             fillColor: 75
 
-      # ── Bottom-right: line chart + bar chart ──────────────────────────────────
+      # ── Bottom-right-left: tabbed charts / trends ────────────────────────────
       - id: chartsPanel
+        type: tabs
         pos: { x: "50%", y: "46%" }
-        size: { width: "48%", height: "43%" }
+        size: { width: "30%", height: "43%" }
         background: 235
         border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
-        content: "Charts"
+        titles: ["Charts", "Trends"]
+        activeIndex: 0
         children:
+          # ── Tab 0: line + bar charts side by side ────────────────────────────
           - id: lineChart
             type: linechart
-            pos: { x: 0, y: 0 }
-            size: { fillHeight: "56%" }
+            tab: 0
+            pos: { x: 0, y: 1 }
+            size: { width: "58%", height: "85%" }
           - id: barChart
             type: barchart
-            pos: { x: "58%", y: 0 }
-            size: { fillHeight: "40%" }
+            tab: 0
+            pos: { x: "60%", y: 1 }
+            size: { width: "38%", height: "85%" }
             barWidth: 2
+
+          # ── Tab 1: three stacked sparklines ──────────────────────────────────
+          - id: sparkCpu
+            type: sparkline
+            tab: 1
+            pos: { x: 6, y: 2 }
+            size: { width: "85%", height: 1 }
+            chartColor: 75
+          - id: sparkMem
+            type: sparkline
+            tab: 1
+            pos: { x: 6, y: 3 }
+            size: { width: "85%", height: 1 }
+            chartColor: 82
+          - id: sparkDsk
+            type: sparkline
+            tab: 1
+            pos: { x: 6, y: 4 }
+            size: { width: "85%", height: 1 }
+            chartColor: 214
+
+      # ── Bottom-right-right: permanently visible event log (ListBox) ───────────
+      - id: eventsPanel
+        pos: { x: "81%", y: "46%" }
+        size: { width: "17%", height: "43%" }
+        background: 235
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        content: "Events"
+        children:
+          - id: eventsList
+            type: listbox
+            pos: { x: 0, y: 1 }
+            size: { width: "100%", height: "85%" }
+            items:
+              - "[12:04:21] user logged in"
+              - "[12:04:33] cache warmed"
+              - "[12:05:01] metric collected"
+              - "[12:05:18] job completed"
 
       # ── Buttons ───────────────────────────────────────────────────────────────
       - id: btnDisabled
