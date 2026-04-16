@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { ListBox } from '../../src/Screen/controls/ListBox.mjs';
+import { Screen }  from '../../src/Screen/Screen.mjs';
 import { Pos }     from '../../src/Screen/Pos.mjs';
 import { Size }    from '../../src/Screen/Size.mjs';
+import type { ListBoxRenderContext, ListBoxRowSegments } from '../../src/Screen/types.mjs';
 
 describe('ListBox', () => {
 	// ── Constructor / state ─────────────────────────────────────────────────────
@@ -164,5 +166,142 @@ describe('ListBox', () => {
 		// After PgDn to index 6 with 6 visible rows, scrollTop = 1 so top row is i1.
 		expect(lb.getCell(ox + 0, oy + 0).char).toBe('i');
 		expect(lb.getCell(ox + 1, oy + 0).char).toBe('1');
+	});
+
+	// ── Generic / custom rendering (P0-1) ──────────────────────────────────────
+
+	it('is generic over item type T', () => {
+		interface Row { id: number; label: string }
+		const rows: Row[] = [{ id: 1, label: 'one' }, { id: 2, label: 'two' }];
+		const lb = new ListBox<Row>({ pos: new Pos(0, 0), size: new Size(20, 8) }, {
+			items: rows,
+			renderItem: (r) => r.label,
+		});
+		const sel: Row | undefined = lb.getSelectedItem();
+		expect(sel?.id).toBe(1);
+	});
+
+	it('onChange receives the generic item type', () => {
+		interface Row { id: number }
+		let received: Row | null = null;
+		const lb = new ListBox<Row>({ pos: new Pos(0, 0), size: new Size(20, 8) }, {
+			items: [{ id: 10 }, { id: 20 }, { id: 30 }],
+			onChange: (_i, row) => { received = row; },
+			renderItem: (r) => `#${r.id}`,
+		});
+		lb.handleKey('\x1b[B');
+		expect(received).toEqual({ id: 20 });
+	});
+
+	it('renderItem returning a plain string is left-aligned', () => {
+		// Screen must be instantiated so BUILTIN_* styles exist in the global registry.
+		new Screen();
+		const lb = new ListBox<{ label: string }>({ pos: new Pos(0, 0), size: new Size(20, 8) }, {
+			items: [{ label: 'hello' }],
+			renderItem: (r) => r.label,
+		});
+		lb.render();
+		const { x: ox, y: oy } = lb.getInnerOffset();
+		expect(lb.getCell(ox + 0, oy + 0).char).toBe('h');
+		expect(lb.getCell(ox + 4, oy + 0).char).toBe('o');
+	});
+
+	it('renderItem with right-aligned segment flushes to the right edge', () => {
+		new Screen();
+		const lb = new ListBox<number>({ pos: new Pos(0, 0), size: new Size(20, 4) }, {
+			items: [1],
+			renderItem: (n): ListBoxRowSegments => [
+				{ text: 'L', align: 'left' },
+				{ text: `R${n}`, align: 'right' },
+			],
+		});
+		lb.render();
+		const { x: ox, y: oy } = lb.getInnerOffset();
+		const { width } = lb.getInnerSize();
+		expect(lb.getCell(ox + 0, oy + 0).char).toBe('L');
+		expect(lb.getCell(ox + width - 2, oy + 0).char).toBe('R');
+		expect(lb.getCell(ox + width - 1, oy + 0).char).toBe('1');
+	});
+
+	it('fill segment occupies the gap between left and right', () => {
+		new Screen();
+		const lb = new ListBox<string>({ pos: new Pos(0, 0), size: new Size(12, 4) }, {
+			items: ['x'],
+			renderItem: (): ListBoxRowSegments => [
+				{ text: 'L', align: 'left' },
+				{ text: '-', align: 'fill' },
+				{ text: 'R', align: 'right' },
+			],
+		});
+		lb.render();
+		const { x: ox, y: oy } = lb.getInnerOffset();
+		const { width } = lb.getInnerSize();
+		expect(lb.getCell(ox + 0,           oy + 0).char).toBe('L');
+		// Fill segment is truncated/padded to width-2; first fill cell holds the literal '-'.
+		expect(lb.getCell(ox + 1,           oy + 0).char).toBe('-');
+		expect(lb.getCell(ox + width - 1,   oy + 0).char).toBe('R');
+	});
+
+	it('renderItem receives ctx with focused/selected/width/index', () => {
+		new Screen();
+		const ctxSeen: ListBoxRenderContext[] = [];
+		const lb = new ListBox<string>({ pos: new Pos(0, 0), size: new Size(10, 4) }, {
+			items: ['a', 'b'],
+			renderItem: (item, ctx) => { ctxSeen.push({ ...ctx }); return item; },
+		});
+		lb.setFocused(true);
+		lb.render();
+		expect(ctxSeen.length).toBe(2);
+		expect(ctxSeen[0].index).toBe(0);
+		expect(ctxSeen[0].selected).toBe(true);
+		expect(ctxSeen[0].focused).toBe(true);
+		expect(ctxSeen[1].selected).toBe(false);
+		// Width matches inner width (10 - 2 borders = 8)
+		expect(ctxSeen[0].width).toBe(lb.getInnerSize().width);
+	});
+
+	it('rowHeight reserves N rows per item slot', () => {
+		new Screen();
+		const lb = new ListBox<string>({ pos: new Pos(0, 0), size: new Size(10, 8) }, {
+			items: ['a', 'b'],
+			rowHeight: 2,
+			renderItem: (s) => s,
+		});
+		lb.render();
+		expect(lb.getRowHeight()).toBe(2);
+		const { x: ox, y: oy } = lb.getInnerOffset();
+		// Item 'a' renders at inner row 0; item 'b' renders at inner row 2 (rowHeight=2).
+		expect(lb.getCell(ox + 0, oy + 0).char).toBe('a');
+		expect(lb.getCell(ox + 0, oy + 2).char).toBe('b');
+		// Row between the two items is blank (part of the first slot).
+		expect(lb.getCell(ox + 0, oy + 1).char).toBe(' ');
+	});
+
+	it('PageDown uses rowHeight-aware visible count', () => {
+		new Screen();
+		const items = Array.from({ length: 30 }, (_, i) => `i${i}`);
+		// Inner height = 6 after border; with rowHeight=2 that's 3 visible slots.
+		const lb = new ListBox<string>({ pos: new Pos(0, 0), size: new Size(10, 8) }, { items, rowHeight: 2 });
+		lb.handleKey('\x1b[6~');
+		expect(lb.getSelectedIndex()).toBe(3);
+	});
+
+	it('keyFn exposes a stable key via getItemKey()', () => {
+		interface Row { id: number }
+		const lb = new ListBox<Row>({ pos: new Pos(0, 0), size: new Size(10, 4) }, {
+			items: [{ id: 7 }],
+			keyFn: (r) => `row-${r.id}`,
+		});
+		expect(lb.getItemKey({ id: 7 })).toBe('row-7');
+	});
+
+	it('setRenderItem installs a renderer after construction', () => {
+		new Screen();
+		const lb = new ListBox<string>({ pos: new Pos(0, 0), size: new Size(10, 4) }, { items: ['abc'] });
+		lb.setRenderItem(() => 'XYZ');
+		lb.render();
+		const { x: ox, y: oy } = lb.getInnerOffset();
+		expect(lb.getCell(ox + 0, oy + 0).char).toBe('X');
+		expect(lb.getCell(ox + 2, oy + 0).char).toBe('Z');
 	});
 });

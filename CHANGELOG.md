@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.16.0] – 2026-04-16
+
+### Added — backlog P0-1 (custom per-row rendering w ListBox)
+- **`ListBox<T>` jest teraz generyczny** — element listy może być dowolnym typem
+  (domyślnie `string`, co zachowuje wsteczną kompatybilność). `ListBoxProperties<T>`,
+  `setItems(items: T[])`, `getSelectedItem(): T | undefined`, `onChange(idx, item: T)`.
+- **`renderItem(item, ctx): string | ListBoxRowSegment[]`** — opcjonalny per-row
+  renderer. Obsługuje segmenty z wyrównaniem `left` / `right` / `fill`; style
+  segmentów są mergowane ze stylem bazowym wiersza (tło selekcji pozostaje widoczne).
+- **`rowHeight`** — wysokość slotu w komórkach (domyślnie 1). `handleKey` PgUp/PgDn
+  uwzględnia liczbę widocznych slotów, nie surowych wierszy.
+- **`keyFn`** — stały klucz per-item, dostępny przez `getItemKey(item)`; przechowywany
+  pod kątem późniejszej reconciliation w `setItems()`.
+- **`setRenderItem(fn)`** — podmiana renderera po konstrukcji.
+- Nowe typy w `src/Screen/types.mts`: `ListBoxRenderContext`, `ListBoxRowSegment`,
+  `ListBoxRowSegments`. Eksportowane z `take4-console` barrel-a.
+
+### Changed
+- **Demo (`src/demo.mts` + `src/layout.yaml`)** — lista zdarzeń (`eventsList`) to teraz
+  `ListBox<EventRow>` z customowym rendererem pokazującym kolorowe ikony (✓/⚠/✖),
+  wyciemniony timestamp i licznik wyrównany do prawej krawędzi.
+
+### Docs
+- Dodano `doc/p0-1-listbox-custom-render.md` — pełny opis API, algorytmu
+  renderowania segmentów i kompatybilności wstecznej.
+
 ## [0.15.1] – 2026-04-12
 
 ### Fixed

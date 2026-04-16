@@ -202,14 +202,49 @@ export interface LineChartProperties {
   color?: number;
 }
 
-/** Control-specific properties for the ListBox control. */
-export interface ListBoxProperties {
+/** Context passed to ListBox.renderItem() for a single row. */
+export interface ListBoxRenderContext {
+  /** 0-based index of the item in the list. */
+  index: number;
+  /** Whether the owning ListBox currently has keyboard focus. */
+  focused: boolean;
+  /** Whether this particular row is the selected one. */
+  selected: boolean;
+  /** Inner width (in cells) available for the row. */
+  width: number;
+}
+
+/** A single styled text segment produced by ListBox.renderItem(). */
+export interface ListBoxRowSegment {
+  /** Literal text drawn into the row at the segment's computed position. */
+  text: string;
+  /** Optional style ID merged onto the row's base (selection) style. */
+  style?: StyleId;
+  /** Horizontal alignment within the row. Default: 'left'.
+   *  - 'left'  segments are laid out left-to-right from column 0.
+   *  - 'right' segments are flushed to the right edge of the row.
+   *  - 'fill'  segment occupies the remaining space between the left and right groups.
+   *    Only the first 'fill' segment in a row is honoured. */
+  align?: 'left' | 'right' | 'fill';
+}
+
+/** Return type of ListBox.renderItem(). A plain string is treated as a single left-aligned segment. */
+export type ListBoxRowSegments = string | ListBoxRowSegment[];
+
+/** Control-specific properties for the ListBox control. Generic over the item type. */
+export interface ListBoxProperties<T = string> {
   /** Initial items shown in the list. Default: []. */
-  items?: string[];
+  items?: T[];
   /** Initial selected index, or -1 for no selection. Default: 0 if items is non-empty, else -1. */
   selectedIndex?: number;
   /** Called when the selected index changes via handleKey(). */
-  onChange?: (index: number, item: string) => void;
+  onChange?: (index: number, item: T) => void;
+  /** Optional per-row renderer returning styled segments. Default: single text segment (item.toString()). */
+  renderItem?: (item: T, ctx: ListBoxRenderContext) => ListBoxRowSegments;
+  /** Row height in cells. Default: 1. Items occupy this many consecutive rows in the viewport. */
+  rowHeight?: number;
+  /** Stable key for reconciliation — currently stored only; future use: preserve scroll/selection across setItems(). */
+  keyFn?: (item: T) => string;
 }
 
 /** Control-specific properties for the Tabs control. */

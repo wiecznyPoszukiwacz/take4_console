@@ -12,8 +12,17 @@ import { Spinner }      from './Screen/controls/Spinner.mjs';
 import { Sparkline }    from './Screen/controls/Sparkline.mjs';
 import { ListBox }      from './Screen/controls/ListBox.mjs';
 import { Tabs }         from './Screen/controls/Tabs.mjs';
+import type { ListBoxRowSegments } from './Screen/types.mjs';
 
 type LedState = 'ok' | 'warn' | 'error' | 'off';
+type EventLevel = 'ok' | 'warn' | 'error';
+
+interface EventRow {
+	timestamp: string;
+	level:     EventLevel;
+	message:   string;
+	count:     number;
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -86,12 +95,43 @@ const main = async (): Promise<void> => {
 	tabs.writeText('MEM', { x: 1, y: 3, style: sparkLblStyle });
 	tabs.writeText('DSK', { x: 1, y: 4, style: sparkLblStyle });
 
-	// ── Events list (tab 2) ──────────────────────────────────────────────────
-	const events = result.get('eventsList') as ListBox;
-	const EVENT_TEMPLATES = [
-		'user logged in', 'cache warmed', 'metric collected', 'job completed',
-		'config reloaded', 'heartbeat ok', 'worker spawned', 'session expired',
-		'gc finished', 'index rebuilt',
+	// ── Events list (with custom per-row renderer: icon + dimmed timestamp + right-aligned count) ─
+	const events = result.get('eventsList') as ListBox<EventRow>;
+
+	// Register the accent styles used by the custom row renderer.
+	const iconOkStyle    = screen.registerStyle({ foreground: 82,  bold: true });
+	const iconWarnStyle  = screen.registerStyle({ foreground: 214, bold: true });
+	const iconErrorStyle = screen.registerStyle({ foreground: 196, bold: true });
+	const tsStyle        = screen.registerStyle({ foreground: 244, dim: true });
+	const countStyle     = screen.registerStyle({ foreground: 220 });
+
+	const levelIcon = (lvl: EventLevel): { glyph: string; style: number } => {
+		if (lvl === 'ok')    return { glyph: '✓', style: iconOkStyle };
+		if (lvl === 'warn')  return { glyph: '⚠', style: iconWarnStyle };
+		return                      { glyph: '✖', style: iconErrorStyle };
+	};
+
+	events.setRenderItem((row): ListBoxRowSegments => {
+		const { glyph, style: iconSt } = levelIcon(row.level);
+		return [
+			{ text: `${glyph} `,         align: 'left',  style: iconSt },
+			{ text: `[${row.timestamp}] `, align: 'left',  style: tsStyle },
+			{ text: row.message,         align: 'left' },
+			{ text: `×${row.count}`,     align: 'right', style: countStyle },
+		];
+	});
+
+	const EVENT_TEMPLATES: Array<{ level: EventLevel; message: string }> = [
+		{ level: 'ok',    message: 'user logged in'     },
+		{ level: 'ok',    message: 'cache warmed'       },
+		{ level: 'ok',    message: 'metric collected'   },
+		{ level: 'ok',    message: 'job completed'      },
+		{ level: 'warn',  message: 'config reloaded'    },
+		{ level: 'ok',    message: 'heartbeat ok'       },
+		{ level: 'ok',    message: 'worker spawned'     },
+		{ level: 'warn',  message: 'session expired'    },
+		{ level: 'ok',    message: 'gc finished'        },
+		{ level: 'error', message: 'index rebuild fail' },
 	];
 
 	// ── Live-updating handles ─────────────────────────────────────────────────
@@ -156,8 +196,14 @@ const main = async (): Promise<void> => {
 		headerSpinner.step();
 
 		// prepend a new event to the log; keep the list bounded
-		const msg   = EVENT_TEMPLATES[rand(EVENT_TEMPLATES.length)]!;
-		const next  = [`[${timestamp()}] ${msg}`, ...events.getItems()];
+		const tpl   = EVENT_TEMPLATES[rand(EVENT_TEMPLATES.length)]!;
+		const entry: EventRow = {
+			timestamp: timestamp(),
+			level:     tpl.level,
+			message:   tpl.message,
+			count:     1 + rand(9),
+		};
+		const next = [entry, ...events.getItems()];
 		events.setItems(next.slice(0, 20));
 
 		screen.render();
