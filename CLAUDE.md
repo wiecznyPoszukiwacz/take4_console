@@ -126,3 +126,78 @@ Builds a window tree from a YAML description. `build(yamlText, screen, wm?)` / `
 - Version bump + CHANGELOG entry required after each feature batch
 - Styles are always registered before use; never pass `CellAttributes` directly to cell methods
 - Child windows that need style IDs from Screen must share the registry: `new Window(..., screen.getStyleRegistry())`
+
+## Backlog execution — currently in progress
+
+We are working through the backlog defined in
+[`doc/take4-console-backlog.md`](./doc/take4-console-backlog.md). The user
+points to one backlog item at a time (by id, e.g. `P0-2`); Claude delivers the
+full change in a single PR-style batch before moving on to the next.
+
+### Working rules per backlog item
+
+Every task must produce **all** of the following, in this order, before the
+next task starts:
+
+1. **Implementation** in `src/`, following all conventions above. Types live
+   in `src/Screen/types.mts`; public API is re-exported from
+   `src/index.mts`.
+2. **Tests** in `tests/` — extend the existing test file for the affected
+   class/module; full suite must stay green (`npx vitest run`). TypeScript must
+   type-check cleanly (`npx tsc --noEmit`).
+3. **Demo / kitchen-sink update** — wire the new feature into
+   `src/demo.mts` + `src/layout.yaml` so it is exercised visibly at runtime.
+   If the feature cannot be shown, explain why in the commit message.
+4. **Per-task documentation** in `doc/<id>-<slug>.md` (e.g.
+   `doc/p0-1-listbox-custom-render.md`) — API, algorithm, examples, backwards
+   compatibility notes, and the list of files changed.
+5. **Version bump** in `package.json` — minor bump per backlog batch (P0-1
+   landed as 0.16.0); patch bumps only for fixups that don't ship new API.
+6. **CHANGELOG entry** under the new version, linked back to the backlog id
+   (e.g. "Added — backlog P0-1 (custom per-row rendering w ListBox)").
+7. **Backlog progress update in this file** — tick the item off in the
+   progress table below and update "currently working on" if relevant.
+8. **Commit + push** on `develop`. The commit message body names the backlog
+   id and the version bump. Never amend previous commits for a new task; each
+   backlog item gets its own commit.
+
+### Rules that are easy to forget
+
+- `renderItem`-style generic APIs must default to the pre-existing string
+  behaviour so that consumers of the old API continue to compile and render
+  identically without opt-in.
+- When a feature changes the shape of data accepted via YAML
+  (`layout.yaml`), either update the YAML so the demo keeps rendering, or
+  remove the stale data and populate it at runtime from `demo.mts`.
+- Don't touch unrelated uncommitted changes in the working tree (e.g.
+  `README.md` edits) when staging a backlog commit — stage only the files
+  that belong to the current task.
+- Tests that need `BUILTIN_*` styles must instantiate a `Screen` first so the
+  global registry is primed; otherwise `writeText` without an explicit style
+  blows up.
+
+### Backlog progress
+
+Totals: **60 items** — P0: 12, P1: 22, P2: 26.
+
+| Sprint | Id    | Title                                   | Version | Status |
+| ------ | ----- | --------------------------------------- | ------- | ------ |
+| 1      | P0-1  | Custom per-row rendering w ListBox      | 0.16.0  | ✅ done (2026-04-16) |
+| 1      | P0-2  | Rich text / multi-style writeText       | —       | ⏳ pending |
+| 1      | P0-3  | Flex layout (auto-sizing)               | —       | ⏳ pending |
+| 1      | P0-4  | onKey preventDefault + kolejność        | —       | ⏳ pending |
+| 1      | P0-5  | WindowManager.pause() / resume()        | —       | ⏳ pending |
+| 1      | P0-6  | onChange w TextBox / TextArea           | —       | ⏳ pending |
+| 1      | P0-7  | Text measurement z East-Asian width     | —       | ⏳ pending |
+| 1      | P0-8  | Window.setVisible(bool)                 | —       | ⏳ pending |
+| 1      | P0-9  | Rozszerzenie BorderStyle                | —       | ⏳ pending |
+| 1      | P0-10 | InterfaceBuilder: register custom types | —       | ⏳ pending |
+| 1      | P0-11 | Screen: alt-screen + hide-cursor opcja  | —       | ⏳ pending |
+| 1      | P0-12 | SIGWINCH autoresize + event             | —       | ⏳ pending |
+
+P1 / P2 items are tracked only in `doc/take4-console-backlog.md` until their
+sprint begins; they will be appended to this table as they land.
+
+**Currently working on:** Sprint 1 (P0 — blokery migracji rpcoon). Next up:
+whichever P0-x the user calls out. Sprint 1 ends when all twelve P0 items
+ship — that unblocks the rpcoon migration.
