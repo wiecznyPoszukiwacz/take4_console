@@ -189,7 +189,7 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 1      | P0-5  | WindowManager.pause() / resume()        | —       | ⏳ pending |
 | 1      | P0-6  | onChange w TextBox / TextArea           | 0.21.0  | ✅ done (2026-04-16) |
 | 1      | P0-7  | Text measurement z East-Asian width     | 0.17.0  | ✅ done (2026-04-16) |
-| 1      | P0-8  | Window.setVisible(bool)                 | —       | ⏳ pending |
+| 1      | P0-8  | Window.setVisible(bool)                 | 0.22.0  | ✅ done (2026-04-16) |
 | 1      | P0-9  | Rozszerzenie BorderStyle                | 0.17.0  | ✅ done (2026-04-16) |
 | 1      | P0-10 | InterfaceBuilder: register custom types | —       | ⏳ pending |
 | 1      | P0-11 | Screen: alt-screen + hide-cursor opcja  | 0.19.0  | ✅ done (2026-04-16) |

@@ -831,6 +831,45 @@ describe('Window', () => {
       expect(win.getCell(2, 0).char).toBe('─');
     });
 
+    it('P0-8: setVisible(false) makes render a no-op and getCell throw', () => {
+      const reg = new StyleRegistry();
+      setRegistry(reg);
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 3), background: reg.register({ background: 123 }) });
+      expect(win.isVisible()).toBe(true);
+
+      win.setVisible(false);
+      expect(win.isVisible()).toBe(false);
+
+      // render() must be a no-op while hidden — the region stays blank and
+      // getCell() signals the invalid access.
+      expect(() => { win.render(); }).not.toThrow();
+      expect(() => win.getCell(0, 0)).toThrow(/hidden/);
+
+      // Becoming visible again restores paint + getCell.
+      win.setVisible(true);
+      win.render();
+      expect(win.getCell(0, 0).char).toBe(' ');
+      expect(win.getCell(0, 0).attributes.background).toBe(123);
+    });
+
+    it('P0-8: hidden child is skipped during parent render()', () => {
+      const reg = new StyleRegistry();
+      setRegistry(reg);
+      const bg = reg.register({ background: 17 });
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 4), background: bg });
+      const child  = new Window({ pos: new Pos(2, 1), size: new Size(4, 2), background: reg.register({ background: 200 }) });
+      parent.addChild(child);
+
+      parent.render();
+      // Visible child overrides the parent background in its area.
+      expect(parent.getCell(2, 1).attributes.background).toBe(200);
+
+      child.setVisible(false);
+      parent.render();
+      // Hidden child leaves the parent background untouched.
+      expect(parent.getCell(2, 1).attributes.background).toBe(17);
+    });
+
     it('chars override can swap horizontal and vertical glyphs', () => {
       const win = new Window({
         pos: new Pos(0, 0),

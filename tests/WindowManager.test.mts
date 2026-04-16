@@ -214,6 +214,35 @@ describe('WindowManager', () => {
 			press(wm, '\t'); // → b (skip disabled)
 			expect(wm.getFocused()).toBe(b);
 		});
+
+		it('P0-8: Tab skips hidden controls', () => {
+			const a      = makeButton('A');
+			const hidden = makeButton('H');
+			const b      = makeButton('B');
+			hidden.setVisible(false);
+			screen.addChild(a);
+			screen.addChild(hidden);
+			screen.addChild(b);
+			wm.register(a);
+			wm.register(hidden);
+			wm.register(b);
+			press(wm, '\t'); // → a
+			press(wm, '\t'); // → b (skip hidden)
+			expect(wm.getFocused()).toBe(b);
+		});
+
+		it('P0-8: setFocus ignores a hidden control', () => {
+			const a      = makeButton('A');
+			const hidden = makeButton('H');
+			hidden.setVisible(false);
+			screen.addChild(a);
+			screen.addChild(hidden);
+			wm.register(a);
+			wm.register(hidden);
+			wm.setFocus(a);
+			wm.setFocus(hidden);
+			expect(wm.getFocused()).toBe(a);
+		});
 	});
 
 	// ── setFocus ──────────────────────────────────────────────────────────────

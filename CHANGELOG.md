@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.22.0] – 2026-04-16
+
+### Added — backlog P0-8 (Window.setVisible)
+- **`Window.setVisible(visible: boolean)` / `Window.isVisible(): boolean`** —
+  ortogonalny do `disabled` przełącznik widoczności. Okna konstruują się
+  jako `visible: true`; `setVisible(false)` zamienia `render()` w no-op
+  (żadna faza `paintBackground → blitContent → paintBorder → children` się
+  nie odpala), a przy przeglądzie dzieci rodzic **pomija** ukryte dziecko,
+  więc jego dotychczasowy region nie jest blitowany — widoczne jest tło
+  rodzica. `getCell` na ukrytym oknie rzuca wyjątek; `setVisible(true)`
+  przywraca okno z nienaruszoną zawartością `content` (hide/show to
+  logiczne ukrycie, a nie kasowanie buforu).
+- **`WindowManager` respektuje widoczność** — nowy prywatny helper
+  `isFocusable(control)` = `!disabled && visible`. Tab / Shift-Tab,
+  `setFocus()`, auto-init focusa oraz mouse click hit-test pomijają
+  niewidoczne kontrolki tak samo, jak od dawna pomijają disabled.
+
+### Demo
+- `src/demo.mts` — `bindKey('v')` toggle'uje widoczność panelu
+  `chartsPanel` (Tabs). Status bar dostaje skrót `v` w trybie normal
+  i help, żeby feature był używalny bez sięgania do docs.
+
 ## [0.21.0] – 2026-04-16
 
 ### Added — backlog P0-6 (onChange / onSubmit / onKeyDown w TextBox + TextArea)

@@ -61,6 +61,11 @@ export class Window {
 	private active: boolean;
 	private posSpec: Pos;
 	private sizeSpec: Size;
+	/** Whether this window participates in rendering. When false, the window's own
+	 *  render() is a no-op, its region is not blitted onto the parent, and
+	 *  `getCell()` throws. Focus-cycle in WindowManager skips invisible focusable
+	 *  controls. Default: true. */
+	private visible: boolean = true;
 
 	/** Creates a window from the given properties.
 	 *  For percentage-based sizes, call addChild() before writing content to the window.
@@ -158,6 +163,20 @@ export class Window {
 		return this.disabled;
 	}
 
+	/** Shows or hides the window. A hidden window does not paint itself, is not
+	 *  blitted onto its parent, and its focusable descendants are skipped by
+	 *  `WindowManager.moveFocus / setFocus`. Toggling visibility does not mutate
+	 *  the content buffer — previously written cells reappear verbatim on the
+	 *  next render after the window is shown again. */
+	public setVisible(visible: boolean): void {
+		this.visible = visible;
+	}
+
+	/** Returns whether this window is currently visible. Default: true. */
+	public isVisible(): boolean {
+		return this.visible;
+	}
+
 	/** Sets the label text displayed by the control. */
 	public setLabel(label: string): void {
 		this.label = label;
@@ -204,8 +223,13 @@ export class Window {
 	}
 
 	/** Returns a resolved Cell (char + CellAttributes) at (x, y) from the display buffer.
-	 *  Throws RangeError if out of bounds. */
+	 *  Throws RangeError if out of bounds. Throws Error when the window is
+	 *  currently hidden (setVisible(false)) — callers should check isVisible()
+	 *  first when the visibility state is uncertain. */
 	public getCell(x: number, y: number): Cell {
+		if (!this.visible) {
+			throw new Error('Window.getCell called on a hidden window (setVisible(false))');
+		}
 		const char       = this.region.getChars()[this.flatIndex(x, y)];
 		const styleId    = this.region.getStyleId(x, y);
 		const attributes = { ...this.registry.get(styleId) };
@@ -371,13 +395,18 @@ export class Window {
 	/**
 	 * Builds the display buffer: background → user content → border → children.
 	 * The result is stored in region and used by blitChild / Screen.render().
+	 * A hidden window (setVisible(false)) returns immediately so neither its
+	 * own paint stages nor its children contribute to the frame; hidden
+	 * children are also skipped in the loop below.
 	 */
 	public render(): void {
+		if (!this.visible) return;
 		this.syncBorderColor();
 		this.paintBackground();
 		this.blitContent();
 		this.paintBorder();
 		for (const child of this.children) {
+			if (!child.visible) continue;
 			child.render();
 			this.blitChild(child);
 		}

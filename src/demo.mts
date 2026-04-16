@@ -115,6 +115,7 @@ const main = async (): Promise<void> => {
 				{ text: '  ' },
 				{ text: '?',     style: shortcutId }, { text: ' toggle help  ' },
 				{ text: 'Ctrl+R', style: shortcutId }, { text: ' random jiggle  ' },
+				{ text: 'v',     style: shortcutId }, { text: ' hide charts  ' },
 				{ text: 'q',     style: shortcutId }, { text: ' quit ' },
 			], { style: statusBase });
 			return;
@@ -126,6 +127,7 @@ const main = async (): Promise<void> => {
 			{ text: 'Tab',   style: shortcutId }, { text: ' focus  ' },
 			{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
 			{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
+			{ text: 'v',     style: shortcutId }, { text: ' charts  ' },
 			{ text: '?',     style: shortcutId }, { text: ' help  ' },
 			{ text: 'q',     style: shortcutId }, { text: ' quit ' },
 			{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
@@ -304,6 +306,18 @@ const main = async (): Promise<void> => {
 	// receives a '\x12' control code.
 	wm.bindKey('ctrl+r', () => {
 		tick();
+		return true;
+	});
+
+	// P0-8 demo: 'v' toggles the visibility of the charts panel. Hidden children
+	// are fully skipped by render() (neither painted nor blitted), so the panel
+	// vanishes leaving the dialog background in its place — and reappears
+	// unchanged when shown again. The Tab focus cycle also skips focusables
+	// inside a hidden subtree.
+	const chartsPanel = result.get('chartsPanel') as Tabs;
+	wm.bindKey('v', () => {
+		chartsPanel.setVisible(!chartsPanel.isVisible());
+		screen.render();
 		return true;
 	});
 

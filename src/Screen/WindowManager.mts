@@ -251,11 +251,14 @@ export class WindowManager {
 		return idx >= 0 ? entries[idx].control : null;
 	}
 
-	/** Moves focus to the given control if it belongs to the active context and is enabled. */
+	/** Moves focus to the given control if it belongs to the active context and is
+	 *  eligible (not disabled, not hidden via setVisible(false)). */
 	public setFocus(control: Focusable & Window): void {
 		const entries = this.activeEntries();
 		const idx     = entries.findIndex(e => e.control === control);
-		if (idx === -1 || entries[idx].control.isDisabled()) return;
+		if (idx === -1) return;
+		const candidate = entries[idx].control;
+		if (candidate.isDisabled() || !candidate.isVisible()) return;
 		this.blurCurrent();
 		this.setActiveFocusIndex(idx);
 		control.setFocused(true);
@@ -552,22 +555,28 @@ export class WindowManager {
 		}
 	}
 
-	/** Finds the first already-focused (or first non-disabled) control and focuses it. */
+	/** Returns true when the control is eligible to receive focus in the current
+	 *  context — neither disabled nor hidden via `Window.setVisible(false)`. */
+	private isFocusable(control: Focusable & Window): boolean {
+		return !control.isDisabled() && control.isVisible();
+	}
+
+	/** Finds the first already-focused (or first eligible) control and focuses it. */
 	private initializeFocus(): void {
 		const entries = this.activeEntries();
 		if (entries.length === 0) return;
 
 		// Prefer a control that is already marked as focused.
 		for (let i = 0; i < entries.length; i++) {
-			if (entries[i].control.isFocused() && !entries[i].control.isDisabled()) {
+			if (entries[i].control.isFocused() && this.isFocusable(entries[i].control)) {
 				this.setActiveFocusIndex(i);
 				return;
 			}
 		}
 
-		// Otherwise focus the first enabled control.
+		// Otherwise focus the first eligible control.
 		for (let i = 0; i < entries.length; i++) {
-			if (!entries[i].control.isDisabled()) {
+			if (this.isFocusable(entries[i].control)) {
 				this.setActiveFocusIndex(i);
 				entries[i].control.setFocused(true);
 				return;
@@ -575,7 +584,8 @@ export class WindowManager {
 		}
 	}
 
-	/** Moves focus by delta (+1 for Tab, -1 for Shift-Tab), skipping disabled controls. */
+	/** Moves focus by delta (+1 for Tab, -1 for Shift-Tab), skipping disabled
+	 *  and hidden controls. */
 	private moveFocus(delta: number): void {
 		const entries = this.activeEntries();
 		if (entries.length === 0) return;
@@ -593,9 +603,9 @@ export class WindowManager {
 		do {
 			next = ((next + delta) % count + count) % count;
 			attempts++;
-		} while (entries[next].control.isDisabled() && attempts <= count);
+		} while (!this.isFocusable(entries[next].control) && attempts <= count);
 
-		if (!entries[next].control.isDisabled()) {
+		if (this.isFocusable(entries[next].control)) {
 			this.setActiveFocusIndex(next);
 			entries[next].control.setFocused(true);
 		}
@@ -608,7 +618,7 @@ export class WindowManager {
 		const entries = this.activeEntries();
 		for (let i = 0; i < entries.length; i++) {
 			const { control, absX, absY } = entries[i];
-			if (control.isDisabled()) continue;
+			if (!this.isFocusable(control)) continue;
 			const { width, height } = control.getSize();
 			if (
 				event.x >= absX && event.x < absX + width &&
