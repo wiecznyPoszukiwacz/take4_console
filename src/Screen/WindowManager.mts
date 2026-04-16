@@ -192,6 +192,11 @@ export class WindowManager {
 	private mainFocusIndex: number;
 	private dialogStack: DialogLevel[];
 	private running: boolean;
+	/** True while pause() is in effect and resume() has not yet reclaimed the
+	 *  terminal. Distinct from `running`: a paused WindowManager is still
+	 *  considered running — `stop()` can finalise it, and all registered
+	 *  focus entries remain intact for resume(). */
+	private paused: boolean = false;
 
 	/** Bound reference kept so we can remove the listener in stop(). */
 	private boundHandleInput: (data: Buffer) => void;
@@ -201,6 +206,12 @@ export class WindowManager {
 	private ownsAltScreen: boolean = false;
 	/** True when run() hid the cursor on its own (so stop() owes it a restore). */
 	private ownsCursor: boolean = false;
+	/** Set by pause() when it exited the alternate screen buffer — instructs
+	 *  resume() to re-enter. Cleared after resume() or stop() uses it. */
+	private pauseRestoreAltScreen: boolean = false;
+	/** Set by pause() when it showed a previously-hidden cursor — instructs
+	 *  resume() to hide it again. Cleared after resume() or stop() uses it. */
+	private pauseRestoreCursorHidden: boolean = false;
 
 	/** Creates a WindowManager for the given Screen.
 	 *  Does not start the input loop; call run() to begin. */
@@ -400,22 +411,30 @@ export class WindowManager {
 	}
 
 	/** Stops the input loop, restores terminal state, and fires the onExit callback.
-	 *  Safe to call even when the loop was not started (skips terminal teardown). */
+	 *  Safe to call even when the loop was not started (skips terminal teardown).
+	 *  When called while paused, the parts that pause() already released
+	 *  (stdin listener, raw mode, mouse tracking) are not re-teardown'd — only
+	 *  the remaining owned state (alt-screen, cursor, SIGTERM listener) is
+	 *  finalised. */
 	public stop(): void {
 		const wasRunning = this.running;
+		const wasPaused  = this.paused;
 		this.running     = false;
+		this.paused      = false;
 
 		if (wasRunning) {
-			process.stdin.off('data', this.boundHandleInput);
-			if (process.stdin.isTTY) {
-				process.stdin.setRawMode(false);
+			if (!wasPaused) {
+				process.stdin.off('data', this.boundHandleInput);
+				if (process.stdin.isTTY) {
+					process.stdin.setRawMode(false);
+				}
+				process.stdin.pause();
+				if (this.mouseEnabled) {
+					process.stdout.write('\x1b[?1006l\x1b[?1000l');
+				}
 			}
-			process.stdin.pause();
 			process.off('SIGTERM', this.boundSigterm);
 
-			if (this.mouseEnabled) {
-				process.stdout.write('\x1b[?1006l\x1b[?1000l');
-			}
 			if (this.ownsCursor) {
 				this.screen.showHardwareCursor();
 				this.ownsCursor = false;
@@ -424,9 +443,94 @@ export class WindowManager {
 				this.screen.exitAltScreen();
 				this.ownsAltScreen = false;
 			}
+			// Drop any latent pause-restore intents so a future run() starts fresh.
+			this.pauseRestoreAltScreen    = false;
+			this.pauseRestoreCursorHidden = false;
 		}
 
 		this.onExit?.();
+	}
+
+	/** Suspends the input loop without tearing down the focus tree. Releases the
+	 *  terminal ownership the WindowManager needs for interactive mode:
+	 *
+	 *  - detaches the stdin 'data' listener, leaves raw mode, pauses stdin;
+	 *  - disables mouse tracking when it was enabled;
+	 *  - restores the hardware cursor when it was hidden (so an external
+	 *    process has a visible cursor);
+	 *  - optionally exits the alternate screen buffer
+	 *    (`{ leaveAltScreen: true }`).
+	 *
+	 *  The typical use is spawning `$EDITOR` or a shell: pause, exec, resume.
+	 *  All registered focus entries, dialog stack, and the onKey/bindKey
+	 *  bindings are preserved, so `resume()` brings the UI back without a
+	 *  full re-registration. No-op when the manager is not running or is
+	 *  already paused. */
+	public pause(options?: { leaveAltScreen?: boolean }): void {
+		if (!this.running || this.paused) return;
+		this.paused = true;
+
+		process.stdin.off('data', this.boundHandleInput);
+		if (process.stdin.isTTY) {
+			process.stdin.setRawMode(false);
+		}
+		process.stdin.pause();
+
+		if (this.mouseEnabled) {
+			process.stdout.write('\x1b[?1006l\x1b[?1000l');
+		}
+
+		this.pauseRestoreCursorHidden = this.screen.isCursorHidden();
+		if (this.pauseRestoreCursorHidden) {
+			this.screen.showHardwareCursor();
+		}
+
+		this.pauseRestoreAltScreen = false;
+		if (options?.leaveAltScreen && this.screen.isAltScreenActive()) {
+			this.screen.exitAltScreen();
+			this.pauseRestoreAltScreen = true;
+		}
+	}
+
+	/** Resumes the input loop after pause(). Re-enters the alternate screen if
+	 *  pause() left it, re-enables mouse tracking, re-hides the cursor when
+	 *  pause() showed it, restores raw mode + stdin listener, and re-renders
+	 *  the current frame unless `{ rerender: false }` is passed. No-op when
+	 *  the manager is not currently paused. */
+	public resume(options?: { rerender?: boolean }): void {
+		if (!this.paused) return;
+		this.paused = false;
+
+		if (this.pauseRestoreAltScreen) {
+			this.screen.enterAltScreen();
+			this.pauseRestoreAltScreen = false;
+		}
+
+		if (this.mouseEnabled) {
+			process.stdout.write('\x1b[?1000h\x1b[?1006h');
+		}
+
+		if (this.pauseRestoreCursorHidden) {
+			this.screen.hideHardwareCursor();
+			this.pauseRestoreCursorHidden = false;
+		}
+
+		if (process.stdin.isTTY) {
+			process.stdin.setRawMode(true);
+		}
+		process.stdin.resume();
+		process.stdin.on('data', this.boundHandleInput);
+
+		if (options?.rerender !== false) {
+			this.renderFrame();
+		}
+	}
+
+	/** Returns true while pause() is active and resume() has not yet been
+	 *  called. A paused manager still has its `run()` context (focus
+	 *  registrations, dialog stack, exit keys) intact. */
+	public isPaused(): boolean {
+		return this.paused;
 	}
 
 	// ── Input handling ─────────────────────────────────────────────────────────

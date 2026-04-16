@@ -103,6 +103,159 @@ describe('WindowManager', () => {
 			altScreen.dispose();
 			writeSpy.mockRestore();
 		});
+
+		// ── P0-5: pause() / resume() ──────────────────────────────────────────
+		describe('P0-5 pause / resume', () => {
+			it('pause() detaches the stdin listener and shows a previously-hidden cursor', () => {
+				const localScreen = makeScreen();
+				localScreen.hideHardwareCursor();
+				const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin    = stubStdin();
+				const localWm  = new WindowManager(localScreen);
+
+				localWm.run();
+				expect(localWm.isPaused()).toBe(false);
+				// Find the .on('data') call count from stdin stub.
+				const onSpy  = process.stdin.on as unknown as ReturnType<typeof vi.spyOn>;
+				const offSpy = process.stdin.off as unknown as ReturnType<typeof vi.spyOn>;
+				const onCallsAfterRun  = onSpy.mock.calls.length;
+				const offCallsBeforePause = offSpy.mock.calls.length;
+
+				writeSpy.mockClear();
+				localWm.pause();
+				expect(localWm.isPaused()).toBe(true);
+				// Listener was detached exactly once.
+				expect(offSpy.mock.calls.length).toBe(offCallsBeforePause + 1);
+				// Cursor was shown.
+				const pauseWrites = writeSpy.mock.calls.map(c => c[0]).join('');
+				expect(pauseWrites.includes('\x1b[?25h')).toBe(true);
+				// Alt-screen was NOT exited by default.
+				expect(pauseWrites.includes('\x1b[?1049l')).toBe(false);
+
+				writeSpy.mockClear();
+				localWm.resume({ rerender: false });
+				expect(localWm.isPaused()).toBe(false);
+				// Listener re-attached (additional .on('data') call).
+				expect(onSpy.mock.calls.length).toBe(onCallsAfterRun + 1);
+				// Cursor hidden again.
+				const resumeWrites = writeSpy.mock.calls.map(c => c[0]).join('');
+				expect(resumeWrites.includes('\x1b[?25l')).toBe(true);
+
+				localWm.stop();
+				stdin.restore();
+				localScreen.dispose();
+				writeSpy.mockRestore();
+			});
+
+			it('pause({ leaveAltScreen: true }) exits alt-screen; resume() re-enters', () => {
+				const localScreen = makeScreen();
+				localScreen.enterAltScreen();
+				const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin    = stubStdin();
+				const localWm  = new WindowManager(localScreen);
+
+				localWm.run();
+				writeSpy.mockClear();
+				localWm.pause({ leaveAltScreen: true });
+				const pauseWrites = writeSpy.mock.calls.map(c => c[0]).join('');
+				expect(pauseWrites.includes('\x1b[?1049l')).toBe(true);
+				expect(localScreen.isAltScreenActive()).toBe(false);
+
+				writeSpy.mockClear();
+				localWm.resume({ rerender: false });
+				const resumeWrites = writeSpy.mock.calls.map(c => c[0]).join('');
+				expect(resumeWrites.includes('\x1b[?1049h')).toBe(true);
+				expect(localScreen.isAltScreenActive()).toBe(true);
+
+				localWm.stop();
+				stdin.restore();
+				localScreen.dispose();
+				writeSpy.mockRestore();
+			});
+
+			it('pause() preserves registered focus entries for resume()', () => {
+				const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin   = stubStdin();
+				const a = makeButton('A');
+				const b = makeButton('B');
+				screen.addChild(a);
+				screen.addChild(b);
+				wm.register(a);
+				wm.register(b);
+
+				wm.run();
+				wm.setFocus(b);
+				wm.pause();
+				expect(wm.isPaused()).toBe(true);
+				expect(wm.getFocused()).toBe(b);     // focus untouched
+
+				wm.resume({ rerender: false });
+				expect(wm.isPaused()).toBe(false);
+				expect(wm.getFocused()).toBe(b);     // still the same control
+				// Tab still advances from the preserved index.
+				press(wm, '\t');
+				expect(wm.getFocused()).toBe(a);
+
+				stdin.restore();
+				writeSpy.mockRestore();
+			});
+
+			it('resume() calls renderFrame unless { rerender: false }', () => {
+				const writeSpy  = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin     = stubStdin();
+				const renderSpy = vi.spyOn(screen, 'render');
+				wm.run();
+				renderSpy.mockClear();
+
+				wm.pause();
+				wm.resume();                          // default rerender
+				expect(renderSpy).toHaveBeenCalledOnce();
+
+				renderSpy.mockClear();
+				wm.pause();
+				wm.resume({ rerender: false });
+				expect(renderSpy).not.toHaveBeenCalled();
+
+				wm.stop();
+				stdin.restore();
+				renderSpy.mockRestore();
+				writeSpy.mockRestore();
+			});
+
+			it('pause() is idempotent; resume() is idempotent', () => {
+				const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin = stubStdin();
+				wm.run();
+				wm.pause();
+				wm.pause();                 // no-op
+				expect(wm.isPaused()).toBe(true);
+				wm.resume({ rerender: false });
+				wm.resume({ rerender: false }); // no-op
+				expect(wm.isPaused()).toBe(false);
+				wm.stop();
+				stdin.restore();
+				writeSpy.mockRestore();
+			});
+
+			it('stop() after pause() does not double-detach stdin', () => {
+				const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+				const stdin  = stubStdin();
+				const offSpy = process.stdin.off as unknown as ReturnType<typeof vi.spyOn>;
+
+				wm.run();
+				const offsBeforePause = offSpy.mock.calls.length;
+				wm.pause();
+				const offsAfterPause  = offSpy.mock.calls.length;
+				expect(offsAfterPause).toBe(offsBeforePause + 1);
+				wm.stop();
+				// stop() should NOT call stdin.off('data', …) again when already paused.
+				const dataOffsAfterStop = offSpy.mock.calls.filter(c => c[0] === 'data').length;
+				const dataOffsAfterPauseOnly = offSpy.mock.calls.slice(0, offsAfterPause).filter(c => c[0] === 'data').length;
+				expect(dataOffsAfterStop).toBe(dataOffsAfterPauseOnly);
+				stdin.restore();
+				writeSpy.mockRestore();
+			});
+		});
 	});
 
 	// ── register / getFocused ─────────────────────────────────────────────────

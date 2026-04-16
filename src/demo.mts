@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { Screen } from './Screen/Screen.mjs';
 import { WindowManager } from './Screen/WindowManager.mjs';
 import { InterfaceBuilder } from './Screen/InterfaceBuilder.mjs';
@@ -115,6 +116,7 @@ const main = async (): Promise<void> => {
 				{ text: '  ' },
 				{ text: '?',     style: shortcutId }, { text: ' toggle help  ' },
 				{ text: 'Ctrl+R', style: shortcutId }, { text: ' random jiggle  ' },
+				{ text: 'Ctrl+E', style: shortcutId }, { text: ' pause TUI  ' },
 				{ text: 'v',     style: shortcutId }, { text: ' hide charts  ' },
 				{ text: 'q',     style: shortcutId }, { text: ' quit ' },
 			], { style: statusBase });
@@ -128,6 +130,7 @@ const main = async (): Promise<void> => {
 			{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
 			{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
 			{ text: 'v',     style: shortcutId }, { text: ' charts  ' },
+			{ text: 'Ctrl+E', style: shortcutId }, { text: ' pause  ' },
 			{ text: '?',     style: shortcutId }, { text: ' help  ' },
 			{ text: 'q',     style: shortcutId }, { text: ' quit ' },
 			{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
@@ -318,6 +321,21 @@ const main = async (): Promise<void> => {
 	wm.bindKey('v', () => {
 		chartsPanel.setVisible(!chartsPanel.isVisible());
 		screen.render();
+		return true;
+	});
+
+	// P0-5 demo: Ctrl+E pauses the WindowManager (drops the TUI), exits the
+	// alternate screen buffer, and spawns a short inline shell so you can see
+	// that the terminal is fully reusable for an external process. Pressing
+	// Enter at the prompt returns to the TUI — resume() re-enters the alt
+	// buffer, re-hides the cursor, re-enables mouse tracking, and re-renders
+	// the frame. The focus / dialog stack / key bindings stay intact across
+	// the cycle.
+	wm.bindKey('ctrl+e', () => {
+		wm.pause({ leaveAltScreen: true });
+		process.stdout.write('\n--- paused take4_console TUI. Press Enter to return ---\n');
+		spawnSync('bash', ['-c', 'read -r _'], { stdio: 'inherit' });
+		wm.resume();
 		return true;
 	});
 

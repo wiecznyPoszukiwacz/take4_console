@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.23.0] – 2026-04-16
+
+### Added — backlog P0-5 (WindowManager.pause / resume)
+- **`WindowManager.pause(options?)` / `resume(options?)` / `isPaused()`** —
+  tymczasowo zwalnia kontrolę nad terminalem bez niszczenia focus tree,
+  rejestracji kontrolek ani stosu dialogów. `pause()` odłącza listener
+  stdin, wyłącza raw mode + mouse tracking, pokazuje kursor i opcjonalnie
+  (`{ leaveAltScreen: true }`) wychodzi z alt-screen buffer. `resume()`
+  re-enter-uje alt-screen (jeśli pause go zamknął), re-enable mouse,
+  ukrywa kursor z powrotem, re-attach stdin + raw mode i re-renderuje
+  klatkę (chyba że `{ rerender: false }`). Obie metody są idempotentne.
+  Typowe użycie: `pause({ leaveAltScreen: true })` → `spawnSync('$EDITOR')`
+  → `resume()`.
+- **`WindowManager.stop()`** rozpoznaje stan pauzy i nie powtarza teardownu
+  stdin / mouse / raw mode, które pause już zrobiła — unika podwójnego
+  `stdin.off('data', …)`. Reszta semantyki stop bez zmian.
+
+### Demo
+- `src/demo.mts` — `bindKey('ctrl+e')` pauzuje TUI (wychodzi z alt-screen),
+  drukuje prompt `--- paused … Press Enter to return ---`, blokuje na
+  `bash -c 'read -r _'` w podpowłoce i po `Enter` wywołuje `resume()`.
+  Focus, helpMode i historia sparkline-ów są zachowane przez cały cykl.
+- Status bar dostaje `Ctrl+E` w obu trybach (help / normal).
+
 ## [0.22.0] – 2026-04-16
 
 ### Added — backlog P0-8 (Window.setVisible)
