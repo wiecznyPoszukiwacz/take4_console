@@ -6,6 +6,7 @@ import { Button } from '../src/Screen/controls/Button.mjs';
 import { Checkbox } from '../src/Screen/controls/Checkbox.mjs';
 import { Radio } from '../src/Screen/controls/Radio.mjs';
 import { TextBox } from '../src/Screen/controls/TextBox.mjs';
+import { TextArea } from '../src/Screen/controls/TextArea.mjs';
 import { Pos } from '../src/Screen/Pos.mjs';
 import { Size } from '../src/Screen/Size.mjs';
 import type { KeyContext } from '../src/Screen/types.mjs';
@@ -172,6 +173,31 @@ describe('WindowManager', () => {
 			press(wm, '\t');      // → b
 			press(wm, '\x1b[Z'); // Shift-Tab → a
 			expect(wm.getFocused()).toBe(a);
+		});
+
+		it('focused control with capturesTab() receives Tab via handleKey (P0-6)', () => {
+			const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(20, 6) }, { insertTabAsSpaces: 2 });
+			const b  = makeButton('B');
+			screen.addChild(ta);
+			screen.addChild(b);
+			wm.register(ta);
+			wm.register(b);
+			wm.setFocus(ta);
+			press(wm, '\t');
+			expect(wm.getFocused()).toBe(ta);     // focus did NOT cycle away
+			expect(ta.getValue()).toBe('  ');     // Tab inserted spaces
+		});
+
+		it('Shift-Tab cycles focus even when capturesTab() is true', () => {
+			const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(20, 6) }, { insertTabAsSpaces: 2 });
+			const b  = makeButton('B');
+			screen.addChild(ta);
+			screen.addChild(b);
+			wm.register(ta);
+			wm.register(b);
+			wm.setFocus(ta);
+			press(wm, '\x1b[Z'); // Shift-Tab
+			expect(wm.getFocused()).toBe(b);
 		});
 
 		it('Tab skips disabled controls', () => {

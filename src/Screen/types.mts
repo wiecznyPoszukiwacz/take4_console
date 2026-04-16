@@ -214,6 +214,16 @@ export interface TextBoxProperties {
   placeholder?: string;
   /** Initial cursor position (character index). Default: end of value. */
   cursor?: number;
+  /** Fires after every value change driven by `handleKey` (typing, backspace,
+   *  delete, paste of a single char, …). Not fired by `setValue`. */
+  onChange?: (value: string) => void;
+  /** Fires when the user presses Enter (`\r` / `\n`) while the TextBox has
+   *  focus. The current value is passed unchanged. */
+  onSubmit?: (value: string) => void;
+  /** Pre-dispatch hook: runs before the built-in `handleKey` logic. Return
+   *  `true` to mark the key as handled — the default behaviour (inserting,
+   *  moving cursor, deleting, …) is then skipped. */
+  onKeyDown?: (key: string) => boolean | void;
 }
 
 /** Control-specific properties for the TextArea control. */
@@ -224,6 +234,22 @@ export interface TextAreaProperties {
   placeholder?: string;
   /** Initial cursor position. Default: { x: 0, y: 0 }. */
   cursor?: { x: number; y: number };
+  /** Fires after every value change driven by `handleKey`. Not fired by
+   *  `setValue`. */
+  onChange?: (value: string) => void;
+  /** Fires when the user submits — by default Ctrl+Enter. Plain Enter still
+   *  inserts a newline. */
+  onSubmit?: (value: string) => void;
+  /** Pre-dispatch hook: runs before the built-in `handleKey` logic. Return
+   *  `true` to short-circuit the default behaviour for this key. */
+  onKeyDown?: (key: string) => boolean | void;
+  /** When > 0, Tab inserts that many space characters instead of cycling
+   *  focus. When 0 (default) Tab passes through unchanged so the
+   *  WindowManager sees it. */
+  insertTabAsSpaces?: number;
+  /** When true, Ctrl+D deletes the character to the right of the cursor
+   *  (or joins with the next line at end of line). Default: false. */
+  ctrlDDeletesForward?: boolean;
 }
 
 /** Control-specific properties for the Checkbox control. */
@@ -447,6 +473,16 @@ export interface YamlWindowDef {
   onPress?: string;
   /** Callback ID registered via InterfaceBuilder.registerCallback() — fired on value change. */
   onChange?: string;
+  /** Callback ID registered via InterfaceBuilder.registerCallback() — fired on submit
+   *  (Enter in TextBox; `ctrl+enter` in TextArea). */
+  onSubmit?: string;
+  /** Pre-dispatch hook callback ID — fired before the built-in handleKey logic
+   *  in TextBox / TextArea; handler returning `true` short-circuits default. */
+  onKeyDown?: string;
+  /** TextArea: when > 0, Tab inserts that many spaces instead of cycling focus. */
+  insertTabAsSpaces?: number;
+  /** TextArea: when true, Ctrl+D deletes the character to the right of the cursor. */
+  ctrlDDeletesForward?: boolean;
   /** LED state ('ok' | 'warn' | 'error' | 'off') — used by statusled. */
   state?: 'ok' | 'warn' | 'error' | 'off';
   /** Whether to show a percentage label over a progress bar. Default: true. */
@@ -503,6 +539,10 @@ export interface Focusable {
   setFocused(focused: boolean): void;
   isDisabled(): boolean;
   handleKey?(key: string): void;
+  /** If present and returns `true`, the WindowManager skips Tab focus
+   *  navigation and dispatches Tab to `handleKey` instead. Used by controls
+   *  that consume Tab themselves (e.g. `TextArea` with `insertTabAsSpaces`). */
+  capturesTab?(): boolean;
 }
 
 /** Mouse event emitted by the terminal (SGR or X10 protocol). */

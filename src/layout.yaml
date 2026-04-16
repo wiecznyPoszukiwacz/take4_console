@@ -48,6 +48,9 @@ windows:
             value: "jan_kowalski"
             placeholder: "username"
             focused: true
+            # P0-6: YAML-wired onSubmit — pressing Enter while this TextBox is
+            # focused fires `usernameSubmitted`, registered in demo.mts.
+            onSubmit: usernameSubmitted
           - id: tbEmail
             type: textbox
             pos: { x: 0, y: 5 }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TextArea } from '../../src/Screen/controls/TextArea.mjs';
 import { Pos } from '../../src/Screen/Pos.mjs';
 import { Size } from '../../src/Screen/Size.mjs';
@@ -166,6 +166,132 @@ describe('TextArea', () => {
       // first visible line should be L3 (scrollY = 2)
       const firstLineSecondChar = ta.getCell(2, 1).char;
       expect(firstLineSecondChar).toBe('3');
+    });
+  });
+
+  // ── P0-6: onChange / onSubmit / onKeyDown / tab / ctrl+d ─────────────────
+
+  describe('onChange callback (P0-6)', () => {
+    it('fires after typing', () => {
+      const onChange = vi.fn();
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { onChange });
+      ta.handleKey('x');
+      expect(onChange).toHaveBeenCalledWith('x');
+    });
+
+    it('fires after Enter splits a line', () => {
+      const onChange = vi.fn();
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'ab', onChange });
+      ta.setCursor({ x: 1, y: 0 });
+      ta.handleKey('\r');
+      expect(onChange).toHaveBeenCalledWith('a\nb');
+    });
+
+    it('does not fire on cursor movement', () => {
+      const onChange = vi.fn();
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'hi', onChange });
+      ta.handleKey('\x1b[D');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('does not fire on setValue()', () => {
+      const onChange = vi.fn();
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { onChange });
+      ta.setValue('imperative');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onSubmit callback (P0-6)', () => {
+    it('fires on the "ctrl+enter" alias', () => {
+      const onSubmit = vi.fn();
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'abc', onSubmit });
+      ta.handleKey('ctrl+enter');
+      expect(onSubmit).toHaveBeenCalledWith('abc');
+    });
+
+    it('plain Enter still inserts a newline', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'ab' });
+      ta.setCursor({ x: 2, y: 0 });
+      ta.handleKey('\r');
+      expect(ta.getValue()).toBe('ab\n');
+    });
+  });
+
+  describe('onKeyDown pre-dispatch hook (P0-6)', () => {
+    it('runs before built-in handling', () => {
+      const calls: string[] = [];
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, {
+        onKeyDown: (k) => { calls.push(k); },
+      });
+      ta.handleKey('a');
+      expect(calls).toEqual(['a']);
+      expect(ta.getValue()).toBe('a');
+    });
+
+    it('returning true short-circuits default action', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, {
+        onKeyDown: () => true,
+      });
+      ta.handleKey('a');
+      expect(ta.getValue()).toBe('');
+    });
+  });
+
+  describe('insertTabAsSpaces (P0-6)', () => {
+    it('inserts N spaces at the cursor when > 0', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(20, 6) }, {
+        value: 'ab',
+        insertTabAsSpaces: 4,
+      });
+      ta.setCursor({ x: 1, y: 0 });
+      ta.handleKey('\t');
+      expect(ta.getValue()).toBe('a    b');
+      expect(ta.getCursor()).toEqual({ x: 5, y: 0 });
+    });
+
+    it('default (0) makes handleKey a no-op for Tab', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'ab' });
+      ta.setCursor({ x: 1, y: 0 });
+      ta.handleKey('\t');
+      expect(ta.getValue()).toBe('ab');
+      expect(ta.getCursor()).toEqual({ x: 1, y: 0 });
+    });
+
+    it('capturesTab() mirrors the setting', () => {
+      const a = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) });
+      const b = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { insertTabAsSpaces: 2 });
+      expect(a.capturesTab()).toBe(false);
+      expect(b.capturesTab()).toBe(true);
+    });
+  });
+
+  describe('ctrlDDeletesForward (P0-6)', () => {
+    it('Ctrl+D deletes the next char when enabled', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, {
+        value: 'abc',
+        ctrlDDeletesForward: true,
+      });
+      ta.setCursor({ x: 1, y: 0 });
+      ta.handleKey('\x04');
+      expect(ta.getValue()).toBe('ac');
+    });
+
+    it('Ctrl+D at end of line joins with next line', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, {
+        value: 'ab\ncd',
+        ctrlDDeletesForward: true,
+      });
+      ta.setCursor({ x: 2, y: 0 });
+      ta.handleKey('\x04');
+      expect(ta.getValue()).toBe('abcd');
+    });
+
+    it('Ctrl+D is a no-op when disabled (default)', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6) }, { value: 'abc' });
+      ta.setCursor({ x: 1, y: 0 });
+      ta.handleKey('\x04');
+      expect(ta.getValue()).toBe('abc');
     });
   });
 });

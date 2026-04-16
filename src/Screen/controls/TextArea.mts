@@ -14,6 +14,12 @@ export class TextArea extends Window {
 	private placeholderStyleId: StyleId;
 	private cursorStyleId: StyleId;
 
+	private onChange?: (value: string) => void;
+	private onSubmit?: (value: string) => void;
+	private onKeyDown?: (key: string) => boolean | void;
+	private insertTabAsSpaces: number;
+	private ctrlDDeletesForward: boolean;
+
 	/** Creates a TextArea from window properties and optional control-specific properties.
 	 *  Uses the global StyleRegistry set by the Screen constructor. */
 	public constructor(wp: WindowProperties, cp?: TextAreaProperties) {
@@ -34,6 +40,12 @@ export class TextArea extends Window {
 		};
 		this.cursor.x = Math.max(0, Math.min(rawCursor.x, this.lines[this.cursor.y].length));
 
+		this.onChange            = cp?.onChange;
+		this.onSubmit            = cp?.onSubmit;
+		this.onKeyDown           = cp?.onKeyDown;
+		this.insertTabAsSpaces   = Math.max(0, cp?.insertTabAsSpaces ?? 0);
+		this.ctrlDDeletesForward = cp?.ctrlDDeletesForward ?? false;
+
 		const reg = getRegistry();
 		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER)!;
 		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)!;
@@ -41,12 +53,33 @@ export class TextArea extends Window {
 		this.clampScroll();
 	}
 
-	/** Replaces the current value; cursor and scroll are clamped to fit. */
+	/** Replaces the current value; cursor and scroll are clamped to fit. Does NOT fire onChange. */
 	public setValue(text: string): void {
 		this.lines  = text.split('\n');
 		this.cursor.y = Math.min(this.cursor.y, this.lines.length - 1);
 		this.cursor.x = Math.min(this.cursor.x, this.lines[this.cursor.y].length);
 		this.clampScroll();
+	}
+
+	/** Replaces the onChange callback. */
+	public setOnChange(fn?: (value: string) => void): void {
+		this.onChange = fn;
+	}
+
+	/** Replaces the onSubmit callback. */
+	public setOnSubmit(fn?: (value: string) => void): void {
+		this.onSubmit = fn;
+	}
+
+	/** Replaces the onKeyDown pre-dispatch hook. */
+	public setOnKeyDown(fn?: (key: string) => boolean | void): void {
+		this.onKeyDown = fn;
+	}
+
+	/** Opt-in to Tab interception: when `insertTabAsSpaces > 0`, the
+	 *  WindowManager forwards Tab to handleKey() instead of cycling focus. */
+	public capturesTab(): boolean {
+		return this.insertTabAsSpaces > 0;
 	}
 
 	/** Returns the current text value (lines joined with '\n'). */
@@ -73,6 +106,53 @@ export class TextArea extends Window {
 	 *  Any single printable character is inserted at the cursor. */
 	public handleKey(key: string): void {
 		if (this.disabled) return;
+
+		// Give the caller a chance to intercept before built-in logic runs.
+		if (this.onKeyDown?.(key) === true) {
+			this.clampScroll();
+			return;
+		}
+
+		const before = this.getValue();
+
+		// Tab → soft-tab insert when configured, otherwise pass-through.
+		if ((key === '\t' || key === 'tab') && this.insertTabAsSpaces > 0) {
+			const spaces  = ' '.repeat(this.insertTabAsSpaces);
+			const lineTab = this.lines[this.cursor.y];
+			this.lines[this.cursor.y] = lineTab.slice(0, this.cursor.x) + spaces + lineTab.slice(this.cursor.x);
+			this.cursor.x += spaces.length;
+			this.clampScroll();
+			if (this.getValue() !== before) this.onChange?.(this.getValue());
+			return;
+		}
+		if (key === '\t' || key === 'tab') {
+			// insertTabAsSpaces === 0 → leave Tab for WindowManager focus cycling.
+			return;
+		}
+
+		// Ctrl+D forward-delete when enabled — same behaviour as \x1b[3~.
+		if (key === '\x04' && this.ctrlDDeletesForward) {
+			const lineD = this.lines[this.cursor.y];
+			if (this.cursor.x < lineD.length) {
+				this.lines[this.cursor.y] = lineD.slice(0, this.cursor.x) + lineD.slice(this.cursor.x + 1);
+			} else if (this.cursor.y < this.lines.length - 1) {
+				this.lines[this.cursor.y] = lineD + this.lines[this.cursor.y + 1];
+				this.lines.splice(this.cursor.y + 1, 1);
+			}
+			this.clampScroll();
+			if (this.getValue() !== before) this.onChange?.(this.getValue());
+			return;
+		}
+
+		// Ctrl+Enter submits without inserting a newline. In xterm this arrives
+		// as '\x1b\r' (ESC + CR) or '\n' depending on terminal; we treat the
+		// explicit alias 'ctrl+enter' plus '\n' (LF on its own) as the submit
+		// key, keeping plain '\r' for newline insertion.
+		if (key === 'ctrl+enter') {
+			this.onSubmit?.(this.getValue());
+			return;
+		}
+
 		const line = this.lines[this.cursor.y];
 		switch (key) {
 			case '\x7f': case '\b': case 'backspace':
@@ -142,6 +222,7 @@ export class TextArea extends Window {
 				}
 		}
 		this.clampScroll();
+		if (this.getValue() !== before) this.onChange?.(this.getValue());
 	}
 
 	/** Rebuilds the TextArea: renders visible lines, draws cursor. */

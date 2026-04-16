@@ -468,12 +468,17 @@ export class WindowManager {
 			}
 
 			// Focus navigation – moveFocus handles index -1 correctly.
+			// Controls that want Tab to flow into handleKey (e.g. TextArea with
+			// insertTabAsSpaces) opt in via Focusable.capturesTab().
 			if (key === '\t') {
-				this.moveFocus(1);
-				this.renderFrame();
-				continue;
-			}
-			if (key === '\x1b[Z') { // Shift-Tab
+				const focused = ctx.focusedControl;
+				if (!focused?.capturesTab?.()) {
+					this.moveFocus(1);
+					this.renderFrame();
+					continue;
+				}
+				// Fall through — let the focused control's handleKey see Tab.
+			} else if (key === '\x1b[Z') { // Shift-Tab — always cycles focus.
 				this.moveFocus(-1);
 				this.renderFrame();
 				continue;

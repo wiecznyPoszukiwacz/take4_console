@@ -218,9 +218,15 @@ export class InterfaceBuilder {
 
       case 'textbox': {
         wp.size = wp.size ?? this.requireSize(def);
+        const tbChange    = def.onChange  ? this.callbacks.get(def.onChange)  : undefined;
+        const tbSubmit    = def.onSubmit  ? this.callbacks.get(def.onSubmit)  : undefined;
+        const tbKeyDown   = def.onKeyDown ? this.callbacks.get(def.onKeyDown) : undefined;
         const tb = new TextBox(wp, {
           value:       def.value,
           placeholder: def.placeholder,
+          onChange:    tbChange  as ((value: string) => void)                 | undefined,
+          onSubmit:    tbSubmit  as ((value: string) => void)                 | undefined,
+          onKeyDown:   tbKeyDown as ((key: string) => boolean | void)         | undefined,
         });
         pending.push({ control: tb, parents: [...parentChain] });
         win = tb;
@@ -229,9 +235,17 @@ export class InterfaceBuilder {
 
       case 'textarea': {
         wp.size = wp.size ?? this.requireSize(def);
+        const taChange    = def.onChange  ? this.callbacks.get(def.onChange)  : undefined;
+        const taSubmit    = def.onSubmit  ? this.callbacks.get(def.onSubmit)  : undefined;
+        const taKeyDown   = def.onKeyDown ? this.callbacks.get(def.onKeyDown) : undefined;
         const ta = new TextArea(wp, {
-          value:       def.value,
-          placeholder: def.placeholder,
+          value:               def.value,
+          placeholder:         def.placeholder,
+          onChange:            taChange  as ((value: string) => void)         | undefined,
+          onSubmit:            taSubmit  as ((value: string) => void)         | undefined,
+          onKeyDown:           taKeyDown as ((key: string) => boolean | void) | undefined,
+          insertTabAsSpaces:   def.insertTabAsSpaces,
+          ctrlDDeletesForward: def.ctrlDDeletesForward,
         });
         pending.push({ control: ta, parents: [...parentChain] });
         win = ta;

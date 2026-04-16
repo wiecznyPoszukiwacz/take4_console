@@ -14,6 +14,13 @@ export class TextBox extends Window {
 	private placeholderStyleId: StyleId;
 	private cursorStyleId: StyleId;
 
+	/** Invoked after every value change driven by handleKey. Not called by setValue. */
+	private onChange?: (value: string) => void;
+	/** Invoked when Enter is pressed while focused. */
+	private onSubmit?: (value: string) => void;
+	/** Pre-dispatch hook — return true to short-circuit built-in handling. */
+	private onKeyDown?: (key: string) => boolean | void;
+
 	/** Creates a TextBox from window properties and optional control-specific properties.
 	 *  Uses the global StyleRegistry set by the Screen constructor. */
 	public constructor(wp: WindowProperties, cp?: TextBoxProperties) {
@@ -29,6 +36,10 @@ export class TextBox extends Window {
 			? Math.max(0, Math.min(cp.cursor, this.value.length))
 			: this.value.length;
 
+		this.onChange  = cp?.onChange;
+		this.onSubmit  = cp?.onSubmit;
+		this.onKeyDown = cp?.onKeyDown;
+
 		const reg = getRegistry();
 		this.placeholderStyleId = reg.getNamed(BUILTIN_TEXT_PLACEHOLDER)!;
 		this.cursorStyleId      = reg.getNamed(BUILTIN_CURSOR)!;
@@ -36,11 +47,26 @@ export class TextBox extends Window {
 		this.clampScroll();
 	}
 
-	/** Replaces the current value; clamps cursor and scroll to fit. */
+	/** Replaces the current value; clamps cursor and scroll to fit. Does NOT fire onChange. */
 	public setValue(value: string): void {
 		this.value  = value;
 		this.cursor = Math.min(this.cursor, value.length);
 		this.clampScroll();
+	}
+
+	/** Replaces the onChange callback (passing undefined clears it). */
+	public setOnChange(fn?: (value: string) => void): void {
+		this.onChange = fn;
+	}
+
+	/** Replaces the onSubmit callback. */
+	public setOnSubmit(fn?: (value: string) => void): void {
+		this.onSubmit = fn;
+	}
+
+	/** Replaces the onKeyDown pre-dispatch hook. */
+	public setOnKeyDown(fn?: (key: string) => boolean | void): void {
+		this.onKeyDown = fn;
 	}
 
 	/** Returns the current text value. */
@@ -66,7 +92,19 @@ export class TextBox extends Window {
 	 *  Any single printable character is inserted at the cursor position. */
 	public handleKey(key: string): void {
 		if (this.disabled) return;
+
+		// Give the caller a chance to intercept before built-in logic runs.
+		if (this.onKeyDown?.(key) === true) {
+			this.clampScroll();
+			return;
+		}
+
+		const before = this.value;
 		switch (key) {
+			case '\r': case '\n': case 'enter':
+				this.onSubmit?.(this.value);
+				this.clampScroll();
+				return; // Enter never mutates value by itself in TextBox.
 			case '\x7f': case '\b': case 'backspace':
 				if (this.cursor > 0) {
 					this.value = this.value.slice(0, this.cursor - 1) + this.value.slice(this.cursor);
@@ -97,6 +135,7 @@ export class TextBox extends Window {
 				}
 		}
 		this.clampScroll();
+		if (this.value !== before) this.onChange?.(this.value);
 	}
 
 	/** Rebuilds the TextBox: renders text or placeholder, draws cursor. */

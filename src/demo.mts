@@ -60,7 +60,24 @@ const main = async (): Promise<void> => {
 	});
 
 	const layoutPath = join(dirname(fileURLToPath(import.meta.url)), 'layout.yaml');
-	const result = await new InterfaceBuilder().buildFromFile(layoutPath, screen, wm);
+	const ib = new InterfaceBuilder();
+
+	// P0-6 demo: when the user presses Enter in the username field, push an
+	// event into the log so the new onSubmit callback is visible at runtime.
+	ib.registerCallback('usernameSubmitted', (...args: unknown[]) => {
+		const value = String(args[0] ?? '');
+		const list = result.get('eventsList') as ListBox<EventRow>;
+		const entry: EventRow = {
+			timestamp: timestamp(),
+			level:     'ok',
+			message:   `user submit: ${value}`,
+			count:     1,
+		};
+		list.setItems([entry, ...list.getItems()].slice(0, 20));
+		screen.render();
+	});
+
+	const result = await ib.buildFromFile(layoutPath, screen, wm);
 
 	// ── Header & status bar ───────────────────────────────────────────────────
 	// Header is rendered via writeMarkup() so the named styles in the registry drive

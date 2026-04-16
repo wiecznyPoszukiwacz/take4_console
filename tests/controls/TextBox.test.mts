@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TextBox } from '../../src/Screen/controls/TextBox.mjs';
 import { Pos } from '../../src/Screen/Pos.mjs';
 import { Size } from '../../src/Screen/Size.mjs';
@@ -158,6 +158,102 @@ describe('TextBox', () => {
       // cursor=12, width=10 → scrollOffset=3 → first visible char is 'D' (index 3)
       expect(tb.getCell(1, 1).char).toBe('D');
       expect(tb.getCell(9, 1).char).toBe('L');
+    });
+  });
+
+  // ── P0-6: onChange / onSubmit / onKeyDown ────────────────────────────────
+
+  describe('onChange callback (P0-6)', () => {
+    it('fires after typing a character', () => {
+      const onChange = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { onChange });
+      tb.handleKey('x');
+      expect(onChange).toHaveBeenCalledWith('x');
+    });
+
+    it('fires after backspace', () => {
+      const onChange = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { value: 'abc', onChange });
+      tb.handleKey('\x7f');
+      expect(onChange).toHaveBeenCalledWith('ab');
+    });
+
+    it('does not fire when nothing changed (cursor move)', () => {
+      const onChange = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { value: 'abc', onChange });
+      tb.handleKey('\x1b[D'); // left
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('does not fire on setValue()', () => {
+      const onChange = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { onChange });
+      tb.setValue('imperative');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('does not fire when disabled', () => {
+      const onChange = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3), disabled: true }, { onChange });
+      tb.handleKey('x');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('setOnChange() installs the callback after construction', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) });
+      const onChange = vi.fn();
+      tb.setOnChange(onChange);
+      tb.handleKey('x');
+      expect(onChange).toHaveBeenCalledWith('x');
+    });
+  });
+
+  describe('onSubmit callback (P0-6)', () => {
+    it('fires on Enter', () => {
+      const onSubmit = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { value: 'hi', onSubmit });
+      tb.handleKey('\r');
+      expect(onSubmit).toHaveBeenCalledWith('hi');
+    });
+
+    it('Enter does not insert anything into the value', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { value: 'hi' });
+      tb.handleKey('\r');
+      expect(tb.getValue()).toBe('hi');
+    });
+
+    it('does not fire when disabled', () => {
+      const onSubmit = vi.fn();
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3), disabled: true }, { onSubmit });
+      tb.handleKey('\r');
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onKeyDown pre-dispatch hook (P0-6)', () => {
+    it('runs before built-in handling', () => {
+      const log: string[] = [];
+      const onKeyDown = vi.fn((k: string) => { log.push(k); });
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { onKeyDown });
+      tb.handleKey('a');
+      expect(log).toEqual(['a']);
+      expect(tb.getValue()).toBe('a'); // built-in still ran (no true returned)
+    });
+
+    it('returning true short-circuits the default action', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, {
+        onKeyDown: () => true,
+      });
+      tb.handleKey('a');
+      expect(tb.getValue()).toBe('');
+    });
+
+    it('returning false / void keeps default behaviour', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, {
+        onKeyDown: () => undefined,
+      });
+      tb.handleKey('a');
+      expect(tb.getValue()).toBe('a');
     });
   });
 });

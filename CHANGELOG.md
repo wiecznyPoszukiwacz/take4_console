@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.21.0] – 2026-04-16
+
+### Added — backlog P0-6 (onChange / onSubmit / onKeyDown w TextBox + TextArea)
+- **`TextBoxProperties` / `TextAreaProperties`** rozszerzone o
+  `onChange(value)`, `onSubmit(value)` i `onKeyDown(key)` (pre-dispatch
+  hook z semantyką `boolean | void` — return `true` = consumed,
+  identycznie jak `WindowManagerOptions.onKey` z P0-4).
+- **`TextAreaProperties.insertTabAsSpaces`** (domyślnie `0`) — gdy
+  `> 0`, Tab wstawia N spacji zamiast cyklować focus; Shift-Tab
+  **zawsze** cykluje focus, dzięki czemu user ma kontrolowany escape
+  z multi-line input-a.
+- **`TextAreaProperties.ctrlDDeletesForward`** (domyślnie `false`) —
+  opt-in forward-delete pod `\x04`.
+- **`Focusable.capturesTab?()`** — opcjonalny hook sprawdzany przez
+  `WindowManager`. `TextArea` implementuje go tak, by zwracał `true`
+  wtedy i tylko wtedy gdy `insertTabAsSpaces > 0`.
+- **Settery**: `TextBox.setOnChange/SetOnSubmit/SetOnKeyDown`,
+  `TextArea.setOnChange/SetOnSubmit/SetOnKeyDown` — do wstrzykiwania
+  callbacków po konstrukcji (np. przy YAML-buildowanych kontrolkach).
+- **YAML / `InterfaceBuilder`** — nowe pola `YamlWindowDef`:
+  `onSubmit`, `onKeyDown`, `insertTabAsSpaces`, `ctrlDDeletesForward`.
+  Callbacki wiązane przez istniejące `ib.registerCallback(id, fn)`.
+
+### Changed
+- **`TextBox.handleKey`**: Enter (`\r` / `\n` / `'enter'`) nie
+  wstawia znaku — odpala `onSubmit(value)`.
+- **`TextArea.handleKey`**: alias `'ctrl+enter'` odpala `onSubmit`;
+  plain Enter bez zmian (wstawia newline).
+- **`WindowManager.handleInput`**: Tab najpierw pyta focused control
+  o `capturesTab()` — gdy odpowiedź to `true`, `handleKey('\t')`
+  dostaje klawisz zamiast standardowego `moveFocus(+1)`.
+
+### Demo
+- `layout.yaml` — `tbUsername` wiąże `onSubmit: usernameSubmitted`.
+- `src/demo.mts` — registerCallback `usernameSubmitted` dopisuje
+  event do log-u po Enter w polu username.
+
 ## [0.20.0] – 2026-04-16
 
 ### Added — backlog P0-4 (onKey preventDefault + kolejność)
