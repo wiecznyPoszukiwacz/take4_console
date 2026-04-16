@@ -1,5 +1,6 @@
 import type { Pos } from './Pos.mjs';
 import type { Size } from './Size.mjs';
+import type { Window } from './Window.mjs';
 
 /** Text and background color, expressed as ANSI color number (0–255) or hex string (e.g. '#ff0000'). */
 export type Color = number | string;
@@ -519,14 +520,35 @@ export interface TerminalMouseEvent {
   ctrl?: boolean;
 }
 
+/** Context passed to global key handlers (`onKey`, `bindKey`). */
+export interface KeyContext {
+  /** The control that currently has focus, or null when none. */
+  focusedControl: (Focusable & Window) | null;
+  /** True when at least one modal dialog is open. */
+  inDialog: boolean;
+  /** Nesting level of the dialog stack (0 = main context). */
+  dialogDepth: number;
+}
+
+/** Signature for handlers registered via `WindowManager.bindKey`.
+ *  Returning `true` marks the key as consumed — further handlers, exit keys,
+ *  focus navigation, and dispatch to the focused control are all skipped. */
+export type KeyBindHandler = (ctx: KeyContext) => boolean | void;
+
 /** Constructor options for WindowManager. */
 export interface WindowManagerOptions {
-  /** Key strings that trigger application exit. Default: ['\x03'] (Ctrl+C). */
+  /** Key strings that trigger application exit. Default: ['\x03'] (Ctrl+C).
+   *  Exit keys are checked **after** `onKey` / `bindKey` handlers; a handler
+   *  returning `true` prevents the exit from firing. */
   exitKeys?: string[];
   /** Called after the input loop stops and the terminal state is restored. */
   onExit?: () => void;
-  /** Called for every raw key string before it is dispatched to a control. */
-  onKey?: (key: string) => void;
+  /** Called for every raw key string before it is dispatched to a control.
+   *  Return `true` to mark the key as consumed — it will then **not** be
+   *  checked against `exitKeys`, will not trigger focus navigation, and will
+   *  not be dispatched to the focused control. Return `false` / `void` to
+   *  keep the previous pass-through behaviour. */
+  onKey?: (key: string, ctx: KeyContext) => boolean | void;
   /** Called for every mouse event when mouse support is enabled. */
   onMouse?: (event: TerminalMouseEvent) => void;
   /** Enable mouse click tracking (SGR protocol). Default: false. */

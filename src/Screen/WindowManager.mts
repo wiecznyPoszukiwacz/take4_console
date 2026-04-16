@@ -1,4 +1,10 @@
-import type { Focusable, WindowManagerOptions, TerminalMouseEvent } from './types.mjs';
+import type {
+	Focusable,
+	WindowManagerOptions,
+	TerminalMouseEvent,
+	KeyContext,
+	KeyBindHandler,
+} from './types.mjs';
 import { Screen } from './Screen.mjs';
 import { Window } from './Window.mjs';
 
@@ -114,6 +120,49 @@ function parseMouseEvent(key: string): TerminalMouseEvent | null {
 	};
 }
 
+// ── Key spec parsing ──────────────────────────────────────────────────────────
+
+/** Lookup table of friendly key names → raw terminal key strings.
+ *  Used by `bindKey` so callers can write `'ctrl+s'` or `'enter'` instead
+ *  of `'\x13'` / `'\r'`. Arrow keys, function keys, etc. stay raw. */
+const KEY_ALIASES: Record<string, string> = {
+	enter:     '\r',
+	return:    '\r',
+	space:     ' ',
+	esc:       '\x1b',
+	escape:    '\x1b',
+	tab:       '\t',
+	backspace: '\x7f',
+	del:       '\x7f',
+	delete:    '\x1b[3~',
+	up:        '\x1b[A',
+	down:      '\x1b[B',
+	right:     '\x1b[C',
+	left:      '\x1b[D',
+	home:      '\x1b[H',
+	end:       '\x1b[F',
+	pageup:    '\x1b[5~',
+	pagedown:  '\x1b[6~',
+};
+
+/** Normalises a caller-provided key spec into the raw key string emitted by
+ *  the terminal. Accepts raw strings (`'\r'`, `'a'`), friendly names
+ *  (`'enter'`, `'space'`, `'up'`), and `'ctrl+<letter>'` combinations.
+ *  Everything else is returned unchanged. */
+function normaliseKeySpec(spec: string): string {
+	if (spec.length <= 1) return spec;
+	const lower = spec.toLowerCase();
+	if (lower in KEY_ALIASES) return KEY_ALIASES[lower]!;
+
+	// `ctrl+<letter>` → ASCII control code (\x01 = Ctrl+A … \x1a = Ctrl+Z).
+	const ctrlMatch = /^ctrl\+([a-z])$/.exec(lower);
+	if (ctrlMatch) {
+		const letter = ctrlMatch[1]!.charCodeAt(0);
+		return String.fromCharCode(letter - 'a'.charCodeAt(0) + 1);
+	}
+	return spec;
+}
+
 // ── WindowManager ─────────────────────────────────────────────────────────────
 
 /** Manages the application input loop, focus, and modal dialogs.
@@ -130,9 +179,14 @@ export class WindowManager {
 	private screen: Screen;
 	private exitKeys: string[];
 	private onExit?: () => void;
-	private onKey?: (key: string) => void;
+	private onKey?: (key: string, ctx: KeyContext) => boolean | void;
 	private onMouse?: (event: TerminalMouseEvent) => void;
 	private mouseEnabled: boolean;
+
+	/** Registered bindings mapped by raw key string.
+	 *  Multiple handlers for the same key fire in insertion order; the first
+	 *  one that returns `true` marks the event as consumed. */
+	private keyBindings: Map<string, KeyBindHandler[]> = new Map();
 
 	private mainEntries: FocusEntry[];
 	private mainFocusIndex: number;
@@ -205,6 +259,51 @@ export class WindowManager {
 		this.blurCurrent();
 		this.setActiveFocusIndex(idx);
 		control.setFocused(true);
+	}
+
+	// ── Global key bindings (P0-4) ─────────────────────────────────────────────
+
+	/** Registers a global shortcut handler.
+	 *
+	 *  The handler fires **before** the focused control receives the key; if it
+	 *  returns `true`, the key is marked as consumed (no dispatch to the
+	 *  focused control, no exit-key check, no focus navigation). Return
+	 *  `false`/`void` to let the key continue through the pipeline — useful
+	 *  for observer-only handlers that want to track keys without blocking.
+	 *
+	 *  `keySpec` accepts friendly names (`'enter'`, `'space'`, `'esc'`,
+	 *  `'ctrl+s'`, arrow names) as well as raw terminal strings
+	 *  (`'\r'`, `'q'`, `'\x1b[A'`). Multiple handlers can be bound to the same
+	 *  key — they fire in insertion order until one consumes the event.
+	 *
+	 *  Returns an unbind function that removes *this particular* registration. */
+	public bindKey(keySpec: string, handler: KeyBindHandler): () => void {
+		const key = normaliseKeySpec(keySpec);
+		const list = this.keyBindings.get(key);
+		if (list) list.push(handler);
+		else this.keyBindings.set(key, [handler]);
+
+		return () => this.unbindKey(keySpec, handler);
+	}
+
+	/** Removes a handler previously registered with `bindKey`. When `handler`
+	 *  is omitted, all handlers for the given key are removed. Returns `true`
+	 *  when at least one handler was removed. */
+	public unbindKey(keySpec: string, handler?: KeyBindHandler): boolean {
+		const key = normaliseKeySpec(keySpec);
+		const list = this.keyBindings.get(key);
+		if (!list) return false;
+
+		if (handler === undefined) {
+			this.keyBindings.delete(key);
+			return true;
+		}
+
+		const idx = list.indexOf(handler);
+		if (idx === -1) return false;
+		list.splice(idx, 1);
+		if (list.length === 0) this.keyBindings.delete(key);
+		return true;
 	}
 
 	// ── Dialog ─────────────────────────────────────────────────────────────────
@@ -345,7 +444,22 @@ export class WindowManager {
 				}
 			}
 
-			this.onKey?.(key);
+			// Build a KeyContext snapshot for global handlers. The focused
+			// control is captured before any handler fires so handlers see a
+			// consistent view even when they mutate focus.
+			const ctx: KeyContext = {
+				focusedControl: this.getFocused(),
+				inDialog:       this.dialogStack.length > 0,
+				dialogDepth:    this.dialogStack.length,
+			};
+
+			// Fire global shortcut handlers first (P0-4). Any handler returning
+			// `true` marks the key as consumed — exit-key check, focus
+			// navigation, and dispatch to the focused control are all skipped.
+			if (this.dispatchGlobalKey(key, ctx)) {
+				this.renderFrame();
+				continue;
+			}
 
 			// Exit keys.
 			if (this.exitKeys.includes(key)) {
@@ -378,6 +492,23 @@ export class WindowManager {
 				this.renderFrame();
 			}
 		}
+	}
+
+	/** Runs registered `bindKey` handlers and the global `onKey` callback
+	 *  for the given key. Returns `true` when the event was consumed. */
+	private dispatchGlobalKey(key: string, ctx: KeyContext): boolean {
+		const bound = this.keyBindings.get(key);
+		if (bound) {
+			// Copy before iterating so an unbindKey() call from within a handler
+			// doesn't skip the next handler in the list.
+			for (const handler of bound.slice()) {
+				if (handler(ctx) === true) return true;
+			}
+		}
+		if (this.onKey) {
+			if (this.onKey(key, ctx) === true) return true;
+		}
+		return false;
 	}
 
 	// ── Private helpers ────────────────────────────────────────────────────────

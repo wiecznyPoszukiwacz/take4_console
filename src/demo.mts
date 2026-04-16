@@ -82,10 +82,26 @@ const main = async (): Promise<void> => {
 	const shortcutId  = screen.registerStyle({ background: 24, foreground: 220, bold: true });
 	const sepId       = screen.registerStyle({ background: 24, foreground: 110 });
 	const dimId       = screen.registerStyle({ background: 24, foreground: 244, dim: true });
+	const helpId      = screen.registerStyle({ background: 24, foreground: 118, bold: true });
 	const statusBar   = result.get('statusBar')!;
+
+	// Toggled by the '?' global shortcut to flip the status bar into "help mode".
+	let helpMode = false;
+
 	/** Repaints the status bar so the live width × height label tracks SIGWINCH. */
 	const redrawStatusBar = (): void => {
 		statusBar.clear();
+		if (helpMode) {
+			statusBar.writeText([
+				{ text: ' HELP ', style: helpId },
+				{ text: '│', style: sepId },
+				{ text: '  ' },
+				{ text: '?',     style: shortcutId }, { text: ' toggle help  ' },
+				{ text: 'Ctrl+R', style: shortcutId }, { text: ' random jiggle  ' },
+				{ text: 'q',     style: shortcutId }, { text: ' quit ' },
+			], { style: statusBase });
+			return;
+		}
 		statusBar.writeText([
 			{ text: ` ${width}×${height}  ` },
 			{ text: '│', style: sepId },
@@ -93,11 +109,22 @@ const main = async (): Promise<void> => {
 			{ text: 'Tab',   style: shortcutId }, { text: ' focus  ' },
 			{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
 			{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
+			{ text: '?',     style: shortcutId }, { text: ' help  ' },
 			{ text: 'q',     style: shortcutId }, { text: ' quit ' },
 			{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
 		], { style: statusBase });
 	};
 	redrawStatusBar();
+
+	// P0-4 demo: '?' toggles the help line in the status bar (consumed, so it
+	// never reaches the focused control). Ctrl+R re-jiggles the chart data
+	// without waiting for the timer — shows that bindKey co-exists with the
+	// regular key dispatch path as long as handlers return true.
+	wm.bindKey('?', () => {
+		helpMode = !helpMode;
+		redrawStatusBar();
+		return true;
+	});
 
 	// ── Resource labels in monitorPanel ──────────────────────────────────────
 	const labelStyle  = screen.registerStyle({ foreground: 245 });
@@ -254,6 +281,14 @@ const main = async (): Promise<void> => {
 	};
 
 	demoTimer = setInterval(tick, 1000);
+
+	// P0-4 demo (cont'd): Ctrl+R force-refreshes the charts out-of-band so the
+	// key handler ordering is easy to observe — the TextBox in the layout never
+	// receives a '\x12' control code.
+	wm.bindKey('ctrl+r', () => {
+		tick();
+		return true;
+	});
 
 	wm.run();
 };

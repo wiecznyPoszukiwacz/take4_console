@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.20.0] – 2026-04-16
+
+### Added — backlog P0-4 (onKey preventDefault + kolejność)
+- **`WindowManagerOptions.onKey`** — nowa sygnatura
+  `(key: string, ctx: KeyContext) => boolean | void`. Zwrot `true`
+  *konsumuje* klawisz: pomija exit-key check, Tab/Shift-Tab navigation
+  i dispatch do focused control. Zwrot `void` / `false` zachowuje
+  dotychczasowe pass-through — istniejący kod działa bez zmian.
+- **`KeyContext`** — nowy typ publiczny: `{ focusedControl, inDialog,
+  dialogDepth }`. Snapshot wzięty przed wywołaniem global handlerów,
+  więc widzą spójny widok focus / dialog stack.
+- **`WindowManager.bindKey(keySpec, handler)` / `unbindKey(keySpec, handler?)`**
+  — register-based alternative dla global shortcut-ów. `bindKey` zwraca
+  unbind-funkcję. `keySpec` akceptuje raw strings, nazwy (`enter`,
+  `space`, `esc`, strzałki, `pageup/down`, `home/end`, …) oraz
+  `ctrl+<letter>`. Wiele handlerów pod jeden klawisz — fire w kolejności
+  rejestracji aż pierwszy zwróci `true`.
+- **`KeyBindHandler`** — typ publiczny: `(ctx: KeyContext) => boolean | void`.
+
+### Changed
+- **Kolejność dispatchu** w `WindowManager.handleInput` — global
+  handlery (`bindKey` → `onKey`) **przed** exit-key check / Tab /
+  dispatch. Dzięki temu global shortcut może zablokować `q` exit
+  (np. confirmation dialog), a TextBox nie "połyka" `?` / `:` / itp.
+- **Demo (`src/demo.mts`)** — `bindKey('?')` toggluje help mode
+  w status barze; `bindKey('ctrl+r')` wymusza `tick()` out-of-band.
+  Status bar stale pokazuje skrót `?` zamiast tylko `q`.
+
 ## [0.19.0] – 2026-04-16
 
 ### Added — backlog P0-11 (Screen alt-screen + hide-cursor opcja)

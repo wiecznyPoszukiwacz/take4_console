@@ -8,6 +8,7 @@ import { Radio } from '../src/Screen/controls/Radio.mjs';
 import { TextBox } from '../src/Screen/controls/TextBox.mjs';
 import { Pos } from '../src/Screen/Pos.mjs';
 import { Size } from '../src/Screen/Size.mjs';
+import type { KeyContext } from '../src/Screen/types.mjs';
 
 // Stub render so tests don't hit process.stdout.
 vi.spyOn(Screen.prototype, 'render').mockImplementation(() => {});
@@ -305,7 +306,165 @@ describe('WindowManager', () => {
 			wmCb.register(tb);
 			wmCb.setFocus(tb);
 			press(wmCb, 'x');
-			expect(onKey).toHaveBeenCalledWith('x');
+			// onKey receives the key and a KeyContext object.
+			expect(onKey).toHaveBeenCalledWith('x', expect.objectContaining({
+				focusedControl: tb,
+				inDialog:       false,
+				dialogDepth:    0,
+			}));
+		});
+
+		it('returning true from onKey consumes the event (no dispatch)', () => {
+			const tb   = makeTextBox('');
+			screen.addChild(tb);
+			const wmCb = new WindowManager(screen, {
+				onKey: () => true, // preventDefault
+			});
+			wmCb.register(tb);
+			wmCb.setFocus(tb);
+			press(wmCb, 'x');
+			// The TextBox must not receive the key when onKey returned true.
+			expect(tb.getValue()).toBe('');
+		});
+
+		it('returning true from onKey blocks exit keys too', () => {
+			const onExit = vi.fn();
+			const wmCb   = new WindowManager(screen, {
+				exitKeys: ['q'],
+				onExit,
+				onKey: (key) => key === 'q', // intercept q
+			});
+			press(wmCb, 'q');
+			expect(onExit).not.toHaveBeenCalled();
+		});
+
+		it('returning false / void keeps the pass-through behaviour', () => {
+			const tb   = makeTextBox('');
+			screen.addChild(tb);
+			const wmCb = new WindowManager(screen, { onKey: () => undefined });
+			wmCb.register(tb);
+			wmCb.setFocus(tb);
+			press(wmCb, 'y');
+			expect(tb.getValue()).toBe('y');
+		});
+
+		it('KeyContext reports dialog depth and focused control inside a dialog', () => {
+			const dialog = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
+			const dBtn   = makeButton('Dlg');
+			screen.addChild(dialog);
+			dialog.addChild(dBtn);
+
+			let captured: KeyContext | null = null;
+			const wmCb = new WindowManager(screen, {
+				onKey: (_k, ctx) => { captured = ctx; },
+			});
+			wmCb.openDialog(dialog, [{ control: dBtn }]);
+			press(wmCb, 'x');
+			expect(captured).toEqual({
+				focusedControl: dBtn,
+				inDialog:       true,
+				dialogDepth:    1,
+			});
+		});
+	});
+
+	// ── bindKey / unbindKey ───────────────────────────────────────────────────
+
+	describe('bindKey() / unbindKey()', () => {
+		it('fires the handler when the bound key is pressed', () => {
+			const handler = vi.fn(() => true);
+			wm.bindKey('?', handler);
+			press(wm, '?');
+			expect(handler).toHaveBeenCalledOnce();
+		});
+
+		it('returning true consumes the event (no dispatch to focused control)', () => {
+			const tb = makeTextBox('');
+			screen.addChild(tb);
+			wm.register(tb);
+			wm.setFocus(tb);
+			wm.bindKey('a', () => true);
+			press(wm, 'a');
+			expect(tb.getValue()).toBe('');
+		});
+
+		it('returning false / void lets the key continue to dispatch', () => {
+			const tb      = makeTextBox('');
+			const handler = vi.fn(() => undefined);
+			screen.addChild(tb);
+			wm.register(tb);
+			wm.setFocus(tb);
+			wm.bindKey('a', handler);
+			press(wm, 'a');
+			expect(handler).toHaveBeenCalledOnce();
+			expect(tb.getValue()).toBe('a');
+		});
+
+		it('multiple handlers fire in insertion order until one consumes', () => {
+			const order: number[] = [];
+			wm.bindKey('x', () => { order.push(1); });          // non-consuming
+			wm.bindKey('x', () => { order.push(2); return true; });
+			wm.bindKey('x', () => { order.push(3); });          // never runs
+			press(wm, 'x');
+			expect(order).toEqual([1, 2]);
+		});
+
+		it('accepts friendly key names (enter, space, ctrl+s)', () => {
+			const onEnter = vi.fn(() => true);
+			const onCtrlS = vi.fn(() => true);
+			wm.bindKey('enter',  onEnter);
+			wm.bindKey('ctrl+s', onCtrlS);
+			press(wm, '\r');
+			press(wm, '\x13'); // Ctrl+S
+			expect(onEnter).toHaveBeenCalledOnce();
+			expect(onCtrlS).toHaveBeenCalledOnce();
+		});
+
+		it('unbind returned from bindKey removes the handler', () => {
+			const handler = vi.fn(() => true);
+			const off     = wm.bindKey('?', handler);
+			off();
+			press(wm, '?');
+			expect(handler).not.toHaveBeenCalled();
+		});
+
+		it('unbindKey(spec) removes all handlers for that key', () => {
+			const a = vi.fn();
+			const b = vi.fn();
+			wm.bindKey('?', a);
+			wm.bindKey('?', b);
+			expect(wm.unbindKey('?')).toBe(true);
+			press(wm, '?');
+			expect(a).not.toHaveBeenCalled();
+			expect(b).not.toHaveBeenCalled();
+		});
+
+		it('unbindKey returns false when no matching handler exists', () => {
+			expect(wm.unbindKey('?')).toBe(false);
+			expect(wm.unbindKey('?', () => {})).toBe(false);
+		});
+
+		it('bindKey fires before exit keys (handler can intercept q)', () => {
+			const onExit = vi.fn();
+			const wmQ    = new WindowManager(screen, { exitKeys: ['q'], onExit });
+			wmQ.bindKey('q', () => true);
+			press(wmQ, 'q');
+			expect(onExit).not.toHaveBeenCalled();
+		});
+
+		it('bindKey handlers receive a KeyContext with the focused control', () => {
+			const btn = makeButton('A');
+			screen.addChild(btn);
+			wm.register(btn);
+			wm.setFocus(btn);
+			let seen: KeyContext | null = null;
+			wm.bindKey('?', (ctx) => { seen = ctx; return true; });
+			press(wm, '?');
+			expect(seen).toEqual({
+				focusedControl: btn,
+				inDialog:       false,
+				dialogDepth:    0,
+			});
 		});
 	});
 

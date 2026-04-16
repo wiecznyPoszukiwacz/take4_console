@@ -185,7 +185,7 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 1      | P0-1  | Custom per-row rendering w ListBox      | 0.16.0  | ✅ done (2026-04-16) |
 | 1      | P0-2  | Rich text / multi-style writeText       | 0.18.0  | ✅ done (2026-04-16) |
 | 1      | P0-3  | Flex layout (auto-sizing)               | —       | ⏳ pending |
-| 1      | P0-4  | onKey preventDefault + kolejność        | —       | ⏳ pending |
+| 1      | P0-4  | onKey preventDefault + kolejność        | 0.20.0  | ✅ done (2026-04-16) |
 | 1      | P0-5  | WindowManager.pause() / resume()        | —       | ⏳ pending |
 | 1      | P0-6  | onChange w TextBox / TextArea           | —       | ⏳ pending |
 | 1      | P0-7  | Text measurement z East-Asian width     | 0.17.0  | ✅ done (2026-04-16) |
