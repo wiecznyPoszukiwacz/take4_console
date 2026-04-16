@@ -147,9 +147,33 @@ export interface WriteTextOptions {
   x?: number;
   /** Row to start writing at. Default: 0. */
   y?: number;
-  /** Style ID registered in a StyleRegistry. Default: 0 (no style). */
+  /** Base style ID merged under every segment's style. Default: auto-picked
+   *  from disabled/focused/normal state (see Window.writeText()). */
   style?: StyleId;
 }
+
+/** A single inline-styled segment accepted by Window.writeText(). The cursor
+ *  advances across consecutive segments without resetting, so segments flow
+ *  inline on the same row like a rich-text span.
+ *  - `style` is a pre-registered StyleId (merged with the base style).
+ *  - `attrs` is registered on the fly (convenience, avoids pre-registering).
+ *  - When both are present, `style` wins; when neither is present the base style applies. */
+export interface WriteTextSegment {
+  /** Literal text for this segment. May contain '\n' which resets the cursor
+   *  to the starting column and advances to the next row. */
+  text: string;
+  /** Optional pre-registered style ID merged with the base style. */
+  style?: StyleId;
+  /** Optional inline CellAttributes; registered into the StyleRegistry automatically. */
+  attrs?: CellAttributes;
+}
+
+/** Input accepted by Window.writeText().
+ *  - A plain string keeps the pre-0.18.0 behaviour: one style for the whole text.
+ *  - An array of segments applies per-segment styles while the cursor flows across
+ *    them; each segment's style is merged with the base style.
+ *  - An empty array is a no-op. */
+export type WriteTextInput = string | WriteTextSegment[];
 
 /** Control-specific properties for the Button control. */
 export interface ButtonProperties {

@@ -1,4 +1,4 @@
-import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, TerminalSize } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize } from './types.mjs';
 import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
@@ -247,48 +247,117 @@ export class Window {
 
 	/** Writes text into the window's content area starting at (x, y) (default 0, 0).
 	 *  Coordinates are relative to the inner content area (i.e. decorations such as borders are excluded).
-	 *  Newline characters move to the next row, resetting x to startX.
-	 *  Characters outside the inner bounds are silently clipped.
-	 *  Wide characters (CJK, emoji, double-width NerdFonts) occupy two consecutive cells:
-	 *  the second cell stores '' as a continuation sentinel, so terminal cursor advancement
-	 *  during render() stays aligned with the buffer indices. Wide chars whose right half
-	 *  would overflow the inner area are skipped entirely.
-	 *  Zero-width codepoints (combining marks, format chars, control chars) are skipped.
-	 *  When no style is provided, automatically picks disabledStyleId, focusedStyleId, or normalStyleId
-	 *  based on the current disabled/focused state. */
-	public writeText(text: string, options?: WriteTextOptions): void {
+	 *
+	 *  Accepts either a plain string (one base style for the whole text) or an array of
+	 *  `WriteTextSegment`s so inline rich text can be laid out without separate writeText()
+	 *  calls — the cursor flows from one segment into the next on the same row. Each segment
+	 *  may pin its own style either as a pre-registered `style: StyleId` or as inline
+	 *  `attrs: CellAttributes` (registered on the fly). The segment style is merged on top
+	 *  of the base style so global defaults (e.g. foreground) keep applying unless overridden.
+	 *
+	 *  Behaviour shared with the single-string form:
+	 *  - Newline characters move to the next row, resetting x to startX.
+	 *  - Characters outside the inner bounds are silently clipped.
+	 *  - Wide characters (CJK, emoji, double-width NerdFonts) occupy two consecutive cells;
+	 *    the second cell stores '' as a continuation sentinel so terminal cursor advancement
+	 *    during render() stays aligned with the buffer indices. Wide chars whose right half
+	 *    would overflow the inner area are skipped entirely.
+	 *  - Zero-width codepoints (combining marks, format chars, control chars) are skipped.
+	 *  - When no style is provided, the base style is auto-picked from disabled / focused /
+	 *    normal state. Pass `options.style = 0` to suppress the state-based base style. */
+	public writeText(input: WriteTextInput, options?: WriteTextOptions): void {
 		const { x: ox, y: oy } = this.getInnerOffset();
 		const { width: iw, height: ih } = this.getInnerSize();
-		const startX  = (options?.x ?? 0) + ox;
-		const startY  = (options?.y ?? 0) + oy;
-		const styleId = options?.style ?? (
+		const startX = (options?.x ?? 0) + ox;
+		const startY = (options?.y ?? 0) + oy;
+		const baseStyle = options?.style ?? (
 			this.disabled ? this.disabledStyleId :
 			this.focused  ? this.focusedStyleId  :
 			this.normalStyleId
 		);
+		const segments: WriteTextSegment[] = typeof input === 'string'
+			? [{ text: input }]
+			: input;
+
 		let cx = startX;
 		let cy = startY;
-		for (const ch of text) {
-			if (ch === '\n') {
-				cx = startX;
-				cy++;
+		for (const seg of segments) {
+			let segId: StyleId = baseStyle;
+			if (seg.style !== undefined) {
+				segId = this.registry.merge(baseStyle, seg.style);
+			} else if (seg.attrs !== undefined) {
+				segId = this.registry.merge(baseStyle, this.registry.register(seg.attrs));
+			}
+			for (const ch of seg.text) {
+				if (ch === '\n') {
+					cx = startX;
+					cy++;
+					continue;
+				}
+				const w = charWidth(ch.codePointAt(0)!);
+				if (w === 0) continue;
+				const inRow = cy >= oy && cy < oy + ih;
+				if (w === 2) {
+					if (inRow && cx >= ox && cx + 1 < ox + iw) {
+						this.setCell(cx,     cy, ch, segId);
+						this.setCell(cx + 1, cy, '',  segId);
+					}
+				} else {
+					if (inRow && cx >= ox && cx < ox + iw) {
+						this.setCell(cx, cy, ch, segId);
+					}
+				}
+				cx += w;
+			}
+		}
+	}
+
+	/** Writes a template that embeds named styles from the StyleRegistry.
+	 *  Syntax is a mini-markup: `{name}…{/}` wraps an inline region in the style
+	 *  registered under `name` (e.g. a built-in name like `builtin:text-focused` or a
+	 *  user-registered custom name). Nested tags inherit attributes from their parent
+	 *  — the inner style is merged on top of the outer one, so `{red}a{bold}b{/}c{/}`
+	 *  renders `a` in red, `b` in red+bold, `c` in red. `{/}` closes the most recently
+	 *  opened tag. Unknown names keep the surrounding style unchanged. `{{` and `}}`
+	 *  escape literal braces. The template is compiled to an array of
+	 *  `WriteTextSegment`s and written via writeText(), so line-wrap, width, and
+	 *  clipping rules are inherited. */
+	public writeMarkup(template: string, options?: WriteTextOptions): void {
+		const segments: WriteTextSegment[] = [];
+		const stack: StyleId[] = [];
+		let buf = '';
+		const flush = (): void => {
+			if (buf.length === 0) return;
+			const top = stack[stack.length - 1];
+			segments.push(top !== undefined ? { text: buf, style: top } : { text: buf });
+			buf = '';
+		};
+		let i = 0;
+		while (i < template.length) {
+			const ch = template[i]!;
+			if (ch === '{' && template[i + 1] === '{') { buf += '{'; i += 2; continue; }
+			if (ch === '}' && template[i + 1] === '}') { buf += '}'; i += 2; continue; }
+			if (ch === '{') {
+				const close = template.indexOf('}', i + 1);
+				if (close === -1) { buf += ch; i++; continue; }
+				const tag = template.slice(i + 1, close);
+				flush();
+				if (tag === '/') {
+					stack.pop();
+				} else {
+					const id = this.registry.getNamed(tag);
+					const top = stack[stack.length - 1] ?? 0;
+					const composed = id !== undefined ? this.registry.merge(top, id) : top;
+					stack.push(composed);
+				}
+				i = close + 1;
 				continue;
 			}
-			const w = charWidth(ch.codePointAt(0)!);
-			if (w === 0) continue;
-			const inRow = cy >= oy && cy < oy + ih;
-			if (w === 2) {
-				if (inRow && cx >= ox && cx + 1 < ox + iw) {
-					this.setCell(cx,     cy, ch, styleId);
-					this.setCell(cx + 1, cy, '',  styleId);
-				}
-			} else {
-				if (inRow && cx >= ox && cx < ox + iw) {
-					this.setCell(cx, cy, ch, styleId);
-				}
-			}
-			cx += w;
+			buf += ch;
+			i++;
 		}
+		flush();
+		this.writeText(segments, options);
 	}
 
 	/** Returns the display width (in terminal cells) of a string,

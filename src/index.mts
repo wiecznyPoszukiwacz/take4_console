@@ -76,6 +76,8 @@ export type {
 	WindowBorder,
 	WindowProperties,
 	WriteTextOptions,
+	WriteTextSegment,
+	WriteTextInput,
 
 	// Control properties
 	ButtonProperties,

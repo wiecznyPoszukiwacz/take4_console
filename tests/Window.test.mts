@@ -604,6 +604,172 @@ describe('Window', () => {
     });
   });
 
+  describe('writeText() with rich-text segments', () => {
+    let reg: StyleRegistry;
+    let win: Window;
+
+    beforeEach(() => {
+      reg = new StyleRegistry();
+      setRegistry(reg);
+      win = new Window({ pos: new Pos(0, 0), size: new Size(20, 3) });
+    });
+
+    it('treats an empty array as a no-op', () => {
+      expect(() => win.writeText([])).not.toThrow();
+      expect(win.getCell(0, 0).char).toBe(' ');
+    });
+
+    it('lays out segments inline; cursor flows across them', () => {
+      win.writeText([
+        { text: 'AB' },
+        { text: 'CD' },
+      ]);
+      expect(win.getCell(0, 0).char).toBe('A');
+      expect(win.getCell(1, 0).char).toBe('B');
+      expect(win.getCell(2, 0).char).toBe('C');
+      expect(win.getCell(3, 0).char).toBe('D');
+    });
+
+    it('applies per-segment style merged onto the base style', () => {
+      const boldId = reg.register({ bold: true });
+      const italicId = reg.register({ italic: true });
+      win.writeText([
+        { text: 'x', style: boldId },
+        { text: 'y', style: italicId },
+      ], { style: 0 });
+      expect(win.getCell(0, 0).attributes.bold).toBe(true);
+      expect(win.getCell(0, 0).attributes.italic).toBeUndefined();
+      expect(win.getCell(1, 0).attributes.italic).toBe(true);
+      expect(win.getCell(1, 0).attributes.bold).toBeUndefined();
+    });
+
+    it('segment attrs are registered on the fly (no pre-register needed)', () => {
+      win.writeText([
+        { text: 'R', attrs: { foreground: 196 } },
+        { text: 'G', attrs: { foreground: 46 } },
+      ], { style: 0 });
+      expect(win.getCell(0, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(1, 0).attributes.foreground).toBe(46);
+    });
+
+    it('segment style overrides attrs when both are supplied', () => {
+      const fgBlueId = reg.register({ foreground: 33 });
+      win.writeText([
+        { text: 'B', style: fgBlueId, attrs: { foreground: 196 } },
+      ], { style: 0 });
+      expect(win.getCell(0, 0).attributes.foreground).toBe(33);
+    });
+
+    it('base style from options.style is merged under segment styles', () => {
+      const baseId = reg.register({ foreground: 252 });
+      const emphId = reg.register({ bold: true });
+      win.writeText([
+        { text: 'e', style: emphId },
+      ], { style: baseId });
+      const cell = win.getCell(0, 0);
+      expect(cell.attributes.foreground).toBe(252);
+      expect(cell.attributes.bold).toBe(true);
+    });
+
+    it('segment style 0 leaves the base style unchanged', () => {
+      const baseId = reg.register({ foreground: 252 });
+      win.writeText([
+        { text: 'p', style: 0 },
+      ], { style: baseId });
+      expect(win.getCell(0, 0).attributes.foreground).toBe(252);
+    });
+
+    it('newline in a segment resets x to startX and advances y', () => {
+      win.writeText([
+        { text: 'AB\nCD' },
+      ], { x: 2 });
+      expect(win.getCell(2, 0).char).toBe('A');
+      expect(win.getCell(3, 0).char).toBe('B');
+      expect(win.getCell(2, 1).char).toBe('C');
+      expect(win.getCell(3, 1).char).toBe('D');
+    });
+
+    it('wide characters in segments occupy two consecutive cells', () => {
+      win.writeText([
+        { text: 'a' },
+        { text: '日', attrs: { foreground: 196 } },
+        { text: 'b' },
+      ], { style: 0 });
+      expect(win.getCell(0, 0).char).toBe('a');
+      expect(win.getCell(1, 0).char).toBe('日');
+      expect(win.getCell(1, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(2, 0).char).toBe('');
+      expect(win.getCell(2, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(3, 0).char).toBe('b');
+    });
+
+    it('segments are clipped at the inner boundary like plain writeText', () => {
+      const narrow = new Window({ pos: new Pos(0, 0), size: new Size(3, 2) });
+      narrow.writeText([
+        { text: 'ABCDE' },
+      ]);
+      expect(narrow.getCell(0, 0).char).toBe('A');
+      expect(narrow.getCell(2, 0).char).toBe('C');
+      // 'D' and 'E' are clipped; nothing to verify beyond not throwing.
+    });
+  });
+
+  describe('writeMarkup()', () => {
+    let reg: StyleRegistry;
+    let win: Window;
+
+    beforeEach(() => {
+      reg = new StyleRegistry();
+      setRegistry(reg);
+      win = new Window({ pos: new Pos(0, 0), size: new Size(30, 3) });
+    });
+
+    it('applies named styles from the registry inline', () => {
+      reg.registerNamed('err',   { foreground: 196, bold: true });
+      reg.registerNamed('muted', { foreground: 244, dim: true });
+      win.writeMarkup('{err}fail{/} {muted}reason{/}', { style: 0 });
+      expect(win.getCell(0, 0).char).toBe('f');
+      expect(win.getCell(0, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(0, 0).attributes.bold).toBe(true);
+      expect(win.getCell(4, 0).char).toBe(' ');
+      expect(win.getCell(5, 0).char).toBe('r');
+      expect(win.getCell(5, 0).attributes.foreground).toBe(244);
+      expect(win.getCell(5, 0).attributes.dim).toBe(true);
+    });
+
+    it('falls back to base style for unknown names', () => {
+      const baseId = reg.register({ foreground: 252 });
+      win.writeMarkup('{unknown}text{/}', { style: baseId });
+      expect(win.getCell(0, 0).char).toBe('t');
+      expect(win.getCell(0, 0).attributes.foreground).toBe(252);
+    });
+
+    it('{{ and }} are treated as literal braces', () => {
+      win.writeMarkup('{{x}}', { style: 0 });
+      expect(win.getCell(0, 0).char).toBe('{');
+      expect(win.getCell(1, 0).char).toBe('x');
+      expect(win.getCell(2, 0).char).toBe('}');
+    });
+
+    it('supports nested tags; {/} closes the most recently opened', () => {
+      reg.registerNamed('red',  { foreground: 196 });
+      reg.registerNamed('bold', { bold: true });
+      win.writeMarkup('{red}a{bold}b{/}c{/}', { style: 0 });
+      expect(win.getCell(0, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(0, 0).attributes.bold).toBeUndefined();
+      expect(win.getCell(1, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(1, 0).attributes.bold).toBe(true);
+      expect(win.getCell(2, 0).attributes.foreground).toBe(196);
+      expect(win.getCell(2, 0).attributes.bold).toBeUndefined();
+    });
+
+    it('allows built-in names with a colon in the tag', () => {
+      win.writeMarkup('{builtin:text-focused}hi{/}', { style: 0 });
+      const focusedId = reg.getNamed('builtin:text-focused')!;
+      expect(win.getCell(0, 0).attributes).toEqual(reg.get(focusedId));
+    });
+  });
+
   describe('extended border styles', () => {
     beforeEach(() => {
       setRegistry(new StyleRegistry());

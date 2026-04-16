@@ -48,16 +48,35 @@ const main = async (): Promise<void> => {
 	const result = await new InterfaceBuilder().buildFromFile(layoutPath, screen, wm);
 
 	// ── Header & status bar ───────────────────────────────────────────────────
-	const headerStyle = screen.registerStyle({ background: 24, foreground: 255, bold: true });
-	result.get('header')!.writeText(' take4_console  │  controls demo ', { style: headerStyle });
-
-	const statusStyle = screen.registerStyle({ background: 24, foreground: 250 });
-	result.get('statusBar')!.writeText(
-		` ${width}×${height}  │  `
-		+ 'Button  Checkbox  Radio  TextBox  '
-		+ 'StatusLED  ProgressBar  ProgressBarV  LineChart  BarChart',
-		{ style: statusStyle },
+	// Header is rendered via writeMarkup() so the named styles in the registry drive
+	// the per-word colouring. `hdr:*` names are registered for the demo and then
+	// referenced from the template string — no manual StyleId threading.
+	screen.setBuiltinStyle('hdr:app',  { background: 24, foreground: 231, bold: true });
+	screen.setBuiltinStyle('hdr:mode', { background: 24, foreground: 153 });
+	screen.setBuiltinStyle('hdr:sep',  { background: 24, foreground: 110 });
+	const headerBase = screen.registerStyle({ background: 24 });
+	result.get('header')!.writeMarkup(
+		' {hdr:app}take4_console{/}  {hdr:sep}│{/}  {hdr:mode}controls demo{/} ',
+		{ style: headerBase },
 	);
+
+	// Status bar demonstrates the new segmented writeText() — each shortcut label is
+	// drawn in a distinct style while the cursor flows across segments without a
+	// separate writeText() call per piece.
+	const statusBase  = screen.registerStyle({ background: 24, foreground: 250 });
+	const shortcutId  = screen.registerStyle({ background: 24, foreground: 220, bold: true });
+	const sepId       = screen.registerStyle({ background: 24, foreground: 110 });
+	const dimId       = screen.registerStyle({ background: 24, foreground: 244, dim: true });
+	result.get('statusBar')!.writeText([
+		{ text: ` ${width}×${height}  ` },
+		{ text: '│', style: sepId },
+		{ text: '  ' },
+		{ text: 'Tab',   style: shortcutId }, { text: ' focus  ' },
+		{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
+		{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
+		{ text: 'q',     style: shortcutId }, { text: ' quit ' },
+		{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
+	], { style: statusBase });
 
 	// ── Resource labels in monitorPanel ──────────────────────────────────────
 	const labelStyle  = screen.registerStyle({ foreground: 245 });

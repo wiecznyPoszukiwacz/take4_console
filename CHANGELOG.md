@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.18.0] – 2026-04-16
+
+### Added — backlog P0-2 (rich text / multi-style writeText)
+- **`Window.writeText`** akceptuje teraz `WriteTextInput = string | WriteTextSegment[]`.
+  Segmenty są renderowane inline — kursor „płynie" przez kolejne segmenty bez
+  resetowania X, więc info-bary, history rows czy command completion nie
+  wymagają ręcznego liczenia pozycji. Każdy segment może podać własny
+  `style: StyleId` (mergowany z base) albo `attrs: CellAttributes` (rejestrowane
+  ad hoc w `StyleRegistry`). Pusta tablica jest no-opem.
+- **`Window.writeMarkup(template, options?)`** — mini-markup `{name}…{/}` dla
+  nazwanych stylów z `StyleRegistry`. Tagi wspierają zagnieżdżanie
+  (wewnętrzny styl jest mergowany na zewnętrzny), `{/}` zamyka najbliższy
+  otwarty tag, `{{` / `}}` to escape literalnych nawiasów klamrowych, nieznane
+  nazwy nie zmieniają stylu. Template kompilowany jest do `WriteTextSegment[]`
+  i puszczany przez `writeText`, więc layout/width/clipping idą tą samą ścieżką.
+- **`WriteTextSegment`**, **`WriteTextInput`** — nowe typy publiczne w
+  `src/Screen/types.mts`, eksportowane z `take4-console` barrel-a.
+
+### Changed
+- **`Window.writeText` pętla renderująca**: zachowana (East-Asian width,
+  zero-width skip, sentinel `''` dla wide chars, clipping). Dodano zewnętrzną
+  pętlę po segmentach i jednorazowe policzenie bazowego stylu.
+- **Demo (`src/demo.mts`)** — nagłówek ekranu używa `writeMarkup` z nazwanymi
+  stylami `hdr:app` / `hdr:mode` / `hdr:sep` (rejestrowane przez
+  `Screen.setBuiltinStyle`). Status bar przeszedł na segmentowy `writeText`
+  z inline'owymi skrótami, separatorem i sekcją dim pokazującą emoji/CJK
+  (double-width) — cała linia jednym wywołaniem.
+
+### Docs
+- Dodano `doc/p0-2-rich-text-writetext.md` — pełny opis API, algorytmu,
+  gramatyki markup-u i kompatybilności wstecznej.
+
 ## [0.17.0] – 2026-04-16
 
 ### Added — backlog P0-7 (text measurement z East-Asian width)

@@ -183,7 +183,7 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | Sprint | Id    | Title                                   | Version | Status |
 | ------ | ----- | --------------------------------------- | ------- | ------ |
 | 1      | P0-1  | Custom per-row rendering w ListBox      | 0.16.0  | ✅ done (2026-04-16) |
-| 1      | P0-2  | Rich text / multi-style writeText       | —       | ⏳ pending |
+| 1      | P0-2  | Rich text / multi-style writeText       | 0.18.0  | ✅ done (2026-04-16) |
 | 1      | P0-3  | Flex layout (auto-sizing)               | —       | ⏳ pending |
 | 1      | P0-4  | onKey preventDefault + kolejność        | —       | ⏳ pending |
 | 1      | P0-5  | WindowManager.pause() / resume()        | —       | ⏳ pending |
