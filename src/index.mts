@@ -67,6 +67,8 @@ export type {
 	Cell,
 	CellAttributes,
 	TerminalSize,
+	ScreenOptions,
+	ScreenFrameStats,
 	AxisSpec,
 	DimSpec,
 

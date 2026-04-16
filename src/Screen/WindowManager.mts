@@ -143,6 +143,10 @@ export class WindowManager {
 	private boundHandleInput: (data: Buffer) => void;
 	/** Bound SIGTERM handler for clean shutdown. */
 	private boundSigterm: () => void;
+	/** True when run() entered the alt-screen on its own (so stop() owes it an exit). */
+	private ownsAltScreen: boolean = false;
+	/** True when run() hid the cursor on its own (so stop() owes it a restore). */
+	private ownsCursor: boolean = false;
 
 	/** Creates a WindowManager for the given Screen.
 	 *  Does not start the input loop; call run() to begin. */
@@ -270,12 +274,24 @@ export class WindowManager {
 		process.stdin.on('data', this.boundHandleInput);
 		process.once('SIGTERM', this.boundSigterm);
 
-		process.stdout.write('\x1b[?1049h'); // switch to alternate screen buffer
+		// Defer alt-screen / cursor hiding to Screen so consumers using
+		// ScreenOptions don't get them double-toggled. We only "own" the toggle
+		// (and therefore have to undo it in stop()) when the Screen wasn't
+		// already in that state — for instance because the user constructed it
+		// with `altScreen: true`, in which case the alt buffer should outlive
+		// stop() until Screen.dispose() runs.
+		if (!this.screen.isAltScreenActive()) {
+			this.screen.enterAltScreen();
+			this.ownsAltScreen = true;
+		}
 		if (this.mouseEnabled) {
 			// Enable button-press tracking + SGR extended coordinates.
 			process.stdout.write('\x1b[?1000h\x1b[?1006h');
 		}
-		process.stdout.write('\x1b[?25l'); // hide cursor
+		if (!this.screen.isCursorHidden()) {
+			this.screen.hideHardwareCursor();
+			this.ownsCursor = true;
+		}
 
 		this.initializeFocus();
 		this.renderFrame();
@@ -298,8 +314,14 @@ export class WindowManager {
 			if (this.mouseEnabled) {
 				process.stdout.write('\x1b[?1006l\x1b[?1000l');
 			}
-			process.stdout.write('\x1b[?25h'); // show cursor
-			process.stdout.write('\x1b[?1049l'); // restore normal screen buffer
+			if (this.ownsCursor) {
+				this.screen.showHardwareCursor();
+				this.ownsCursor = false;
+			}
+			if (this.ownsAltScreen) {
+				this.screen.exitAltScreen();
+				this.ownsAltScreen = false;
+			}
 		}
 
 		this.onExit?.();

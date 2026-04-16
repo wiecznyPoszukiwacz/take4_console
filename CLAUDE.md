@@ -192,8 +192,8 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 1      | P0-8  | Window.setVisible(bool)                 | —       | ⏳ pending |
 | 1      | P0-9  | Rozszerzenie BorderStyle                | 0.17.0  | ✅ done (2026-04-16) |
 | 1      | P0-10 | InterfaceBuilder: register custom types | —       | ⏳ pending |
-| 1      | P0-11 | Screen: alt-screen + hide-cursor opcja  | —       | ⏳ pending |
-| 1      | P0-12 | SIGWINCH autoresize + event             | —       | ⏳ pending |
+| 1      | P0-11 | Screen: alt-screen + hide-cursor opcja  | 0.19.0  | ✅ done (2026-04-16) |
+| 1      | P0-12 | SIGWINCH autoresize + event             | 0.19.0  | ✅ done (2026-04-16) |
 
 P1 / P2 items are tracked only in `doc/take4-console-backlog.md` until their
 sprint begins; they will be appended to this table as they land.

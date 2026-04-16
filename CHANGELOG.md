@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.19.0] – 2026-04-16
+
+### Added — backlog P0-11 (Screen alt-screen + hide-cursor opcja)
+- **`ScreenOptions`** — nowy interfejs publiczny: `altScreen?`, `hideCursor?`,
+  `targetFps?`. `new Screen({ altScreen: true, hideCursor: true })` sam
+  wchodzi w alt-screen buffer i ukrywa kursor — koniec boilerplate'u dla
+  konsumentów-bez-WindowManagera.
+- **`Screen.enterAltScreen` / `exitAltScreen` / `hideHardwareCursor` /
+  `showHardwareCursor`** + odpowiadające `is…` queries. Wszystkie idempotentne;
+  pozwalają zewnętrznemu kodowi (w tym `WindowManager`-owi) dzielić ten sam
+  state machine.
+- **`Screen.dispose`** — przywraca każdą zmianę w stanie terminala i
+  odpina listenery sygnałów. Idempotentne. Połączone z `process.on('exit')`,
+  więc cleanup last-chance odpalą się też przy `process.exit()` /
+  naturalnym end-of-loop.
+- **`Screen.getTargetFps`** — soft cap z `ScreenOptions` zwracany do inspekcji
+  (pełny enforcement w P2-47).
+
+### Added — backlog P0-12 (SIGWINCH autoresize + event)
+- **`Screen` event API**: `screen.on('resize', listener)` i
+  `screen.on('frame', listener)` (typed overloads). Pod spodem
+  composed `EventEmitter`, więc Window class hierarchy zostaje płaska.
+- **`Screen.resize(width?, height?)`** — pobiera nowe wymiary z
+  `process.stdout` (lub z explicit args), reflowuje dzieci procentowe,
+  emituje `'resize'`. Wywoływane automatycznie przez SIGWINCH handler.
+- **`render()`** mierzy wall-clock i emituje `'frame'` z `{ ms }`
+  po każdym wywołaniu — daje hak do telemetrii FPS / animation loopów.
+- **`Window.setSize(width, height)`** — publiczny wrapper na
+  `resizeRegions` (zmienione z `private` na `protected`). Reflowuje
+  dzieci procentowe pod nowy parent area.
+
+### Changed
+- **`WindowManager.run/stop`** — używa `screen.enterAltScreen` /
+  `hideHardwareCursor` zamiast pisać escape'y wprost. Tracking ownership
+  przez `ownsAltScreen` / `ownsCursor`: jeżeli `Screen` ustawił stan
+  w konstruktorze (`ScreenOptions`), `stop()` go nie wycofuje — alt-screen
+  przeżywa restart WM-a aż do `Screen.dispose()`.
+- **Demo (`src/demo.mts`)** — `new Screen({ altScreen: true, hideCursor: true })`,
+  `screen.on('resize', …)` aktualizujący status bar i wykonujący `screen.render()`,
+  `screen.dispose()` w `onExit` callbacku WindowManagera. Status bar wydzielony
+  jako `redrawStatusBar()` żeby etykieta `${width}×${height}` mogła być
+  przerysowana po resize.
+- **`Screen` listener cap** — statyczny licznik aktywnych instancji bumpuje
+  `process.setMaxListeners(10 + n*2)`, dispose dekrementuje. Eliminuje
+  `MaxListenersExceededWarning` w suite-ach testowych z wieloma `new Screen()`.
+
+### Tests
+- 9 nowych testów w `tests/Screen.test.mts` (ScreenOptions, dispose,
+  resize, frame event) + `afterEach(dispose)`.
+- 1 nowy test w `tests/WindowManager.test.mts` (lifecycle: brak podwójnego
+  toggle dla alt-screen i kursora) + `afterEach(dispose)`.
+- Pełna suita: 499 testów, wszystkie zielone.
+
+### Docs
+- Dodano `doc/p0-11-and-p0-12-screen-lifecycle.md` — pełny opis API,
+  cyklu życia, interakcji z WindowManager, backwards compatibility i
+  zmienionych plików.
+
 ## [0.18.0] – 2026-04-16
 
 ### Added — backlog P0-2 (rich text / multi-style writeText)

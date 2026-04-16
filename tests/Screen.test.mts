@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { Screen } from '../src/Screen/Screen.mjs';
 import { Window } from '../src/Screen/Window.mjs';
-import { Pos } from '../src/Screen/Pos.mjs';
+import { Pos, Pct } from '../src/Screen/Pos.mjs';
 import { Size } from '../src/Screen/Size.mjs';
 
 describe('Screen', () => {
@@ -9,6 +9,10 @@ describe('Screen', () => {
 
   beforeEach(() => {
     screen = new Screen();
+  });
+
+  afterEach(() => {
+    screen.dispose();
   });
 
   describe('getSize()', () => {
@@ -157,6 +161,102 @@ describe('Screen', () => {
       const output = writeSpy.mock.calls[0][0] as string;
       expect(output).toContain('日');
       expect(output).toContain('x');
+    });
+
+    it('emits a "frame" event with a numeric ms duration after render()', () => {
+      const events: Array<{ ms: number }> = [];
+      screen.on('frame', stats => events.push(stats));
+      screen.render();
+      expect(events).toHaveLength(1);
+      expect(typeof events[0].ms).toBe('number');
+      expect(events[0].ms).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ── ScreenOptions (P0-11) ─────────────────────────────────────────────────
+
+  describe('ScreenOptions', () => {
+    let writeSpy: { mockRestore(): void; mockClear(): void; mock: { calls: Array<[string | Uint8Array, ...unknown[]]> } };
+
+    beforeEach(() => {
+      writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true) as unknown as typeof writeSpy;
+    });
+
+    afterEach(() => {
+      writeSpy.mockRestore();
+    });
+
+    it('default constructor leaves the terminal state untouched', () => {
+      const s = new Screen();
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(s.isAltScreenActive()).toBe(false);
+      expect(s.isCursorHidden()).toBe(false);
+      s.dispose();
+    });
+
+    it('altScreen: true enters the alternate screen buffer on construction', () => {
+      const s = new Screen({ altScreen: true });
+      const writes = writeSpy.mock.calls.map(c => c[0]).join('');
+      expect(writes).toContain('\x1b[?1049h');
+      expect(s.isAltScreenActive()).toBe(true);
+      s.dispose();
+    });
+
+    it('hideCursor: true hides the hardware cursor on construction', () => {
+      const s = new Screen({ hideCursor: true });
+      const writes = writeSpy.mock.calls.map(c => c[0]).join('');
+      expect(writes).toContain('\x1b[?25l');
+      expect(s.isCursorHidden()).toBe(true);
+      s.dispose();
+    });
+
+    it('dispose() restores both alt-screen and cursor and is idempotent', () => {
+      const s = new Screen({ altScreen: true, hideCursor: true });
+      writeSpy.mockClear();
+      s.dispose();
+      const writes = writeSpy.mock.calls.map(c => c[0]).join('');
+      expect(writes).toContain('\x1b[?25h');
+      expect(writes).toContain('\x1b[?1049l');
+      expect(s.isAltScreenActive()).toBe(false);
+      expect(s.isCursorHidden()).toBe(false);
+
+      writeSpy.mockClear();
+      s.dispose();
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it('targetFps is exposed via getTargetFps()', () => {
+      const s = new Screen({ targetFps: 30 });
+      expect(s.getTargetFps()).toBe(30);
+      s.dispose();
+    });
+  });
+
+  // ── SIGWINCH / resize event (P0-12) ───────────────────────────────────────
+
+  describe('resize()', () => {
+    it('updates getSize() to the explicit dimensions', () => {
+      screen.resize(120, 40);
+      const size = screen.getSize();
+      expect(size.width).toBe(120);
+      expect(size.height).toBe(40);
+    });
+
+    it('emits a "resize" event with the new TerminalSize', () => {
+      const sizes: Array<{ width: number; height: number }> = [];
+      screen.on('resize', size => sizes.push(size));
+      screen.resize(100, 30);
+      expect(sizes).toEqual([{ width: 100, height: 30 }]);
+    });
+
+    it('reflows percentage-based children against the new inner area', () => {
+      screen.resize(80, 24);
+      const child = new Window({ pos: Pos.topLeft(), size: new Size(new Pct(50), new Pct(50)) });
+      screen.addChild(child);
+      expect(child.getSize()).toEqual({ width: 40, height: 12 });
+
+      screen.resize(160, 48);
+      expect(child.getSize()).toEqual({ width: 80, height: 24 });
     });
   });
 });

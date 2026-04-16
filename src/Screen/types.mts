@@ -57,6 +57,30 @@ export interface TerminalSize {
   height: number;
 }
 
+/** Constructor options for Screen. All fields are optional; defaults preserve
+ *  the pre-0.19.0 behaviour where Screen does not touch the terminal state on
+ *  construction (WindowManager.run/stop handle alt-screen and cursor hiding).
+ *  Setting any flag here lets a Screen-only consumer (no WindowManager) opt
+ *  into the same lifecycle semantics without writing the boilerplate by hand. */
+export interface ScreenOptions {
+  /** Switch to the terminal's alternate screen buffer on construction and
+   *  restore the primary buffer on dispose() / process exit. Default: false. */
+  altScreen?: boolean;
+  /** Hide the hardware cursor on construction and restore on dispose() /
+   *  process exit. Default: false. */
+  hideCursor?: boolean;
+  /** Soft cap on render frequency in frames per second. Stored on the Screen
+   *  for inspection; full enforcement (frame coalescing) lands with backlog
+   *  item P2-47. Default: undefined (uncapped). */
+  targetFps?: number;
+}
+
+/** Statistics emitted by the Screen 'frame' event after each render() call. */
+export interface ScreenFrameStats {
+  /** Wall-clock duration of the render() call in milliseconds. */
+  ms: number;
+}
+
 /** Box-drawing character style for window borders.
  *  - 'single'  ─│┌┐└┘     classic light box drawing
  *  - 'double'  ═║╔╗╚╝     double-line box drawing

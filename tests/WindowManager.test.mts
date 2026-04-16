@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WindowManager } from '../src/Screen/WindowManager.mjs';
 import { Screen } from '../src/Screen/Screen.mjs';
 import { Window } from '../src/Screen/Window.mjs';
@@ -47,6 +47,60 @@ describe('WindowManager', () => {
 	beforeEach(() => {
 		screen = makeScreen();
 		wm     = new WindowManager(screen);
+	});
+
+	afterEach(() => {
+		screen.dispose();
+	});
+
+	// ── Lifecycle (P0-11 integration) ─────────────────────────────────────────
+
+	describe('lifecycle', () => {
+		// Stop / start cycle drives the alternate screen + cursor toggles. We
+		// patch process.stdin so run() doesn't actually take over the terminal,
+		// and capture stdout writes to inspect what escape sequences were sent.
+		const stubStdin = (): { restore: () => void } => {
+			const onSpy     = vi.spyOn(process.stdin, 'on').mockReturnValue(process.stdin);
+			const offSpy    = vi.spyOn(process.stdin, 'off').mockReturnValue(process.stdin);
+			const resumeSpy = vi.spyOn(process.stdin, 'resume').mockReturnValue(process.stdin);
+			const pauseSpy  = vi.spyOn(process.stdin, 'pause').mockReturnValue(process.stdin);
+			return {
+				restore: () => {
+					onSpy.mockRestore();
+					offSpy.mockRestore();
+					resumeSpy.mockRestore();
+					pauseSpy.mockRestore();
+				},
+			};
+		};
+
+		it('does not re-enter alt-screen when Screen already owns it', () => {
+			const altScreen = makeScreen();
+			const writeSpy  = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+			altScreen.enterAltScreen();
+			altScreen.hideHardwareCursor();
+			writeSpy.mockClear();
+
+			const stdin = stubStdin();
+			const localWm = new WindowManager(altScreen);
+			localWm.run();
+			const writes = writeSpy.mock.calls.map(c => c[0]).join('');
+			// Neither the alt-screen enter nor the cursor-hide sequence should
+			// be emitted again: Screen already toggled them and tracks state.
+			expect(writes.includes('\x1b[?1049h')).toBe(false);
+			expect(writes.includes('\x1b[?25l')).toBe(false);
+
+			localWm.stop();
+			const stopWrites = writeSpy.mock.calls.map(c => c[0]).join('');
+			// stop() must not undo what Screen owned — those toggles outlive
+			// stop() until Screen.dispose() is called.
+			expect(stopWrites.includes('\x1b[?1049l')).toBe(false);
+			expect(stopWrites.includes('\x1b[?25h')).toBe(false);
+
+			stdin.restore();
+			altScreen.dispose();
+			writeSpy.mockRestore();
+		});
 	});
 
 	// ── register / getFocused ─────────────────────────────────────────────────

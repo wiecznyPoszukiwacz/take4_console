@@ -518,10 +518,20 @@ export class Window {
 
 	/** Replaces both internal regions with new ones of the given dimensions,
 	 *  then re-resolves sizes and positions of all direct children against the updated inner area. */
-	private resizeRegions(w: number, h: number): void {
+	protected resizeRegions(w: number, h: number): void {
 		this.region  = new Region(w, h);
 		this.content = new Region(w, h);
 		this.reflowChildren();
+	}
+
+	/** Resizes this window to the given absolute dimensions and reflows every
+	 *  descendant whose size or position is percentage-based against the new
+	 *  inner area. Existing absolute children keep their declared geometry but
+	 *  have their stored x/y refreshed by reflowChildren() so the parent's
+	 *  border insets still apply. The previously written content is discarded
+	 *  — callers that need to preserve it must redraw after setSize(). */
+	public setSize(width: number, height: number): void {
+		this.resizeRegions(width, height);
 	}
 
 	/** Re-resolves sizes and absolute positions for every direct child against the current inner area.

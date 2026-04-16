@@ -28,8 +28,12 @@ interface EventRow {
 
 /** Renders the controls demo. */
 const main = async (): Promise<void> => {
-	const screen  = new Screen();
-	const { width, height } = screen.getSize();
+	// 0.19.0: Screen owns the alt-screen + cursor toggles, so WindowManager won't
+	// re-enter them. dispose() runs on exit (via process.on('exit', …)) so the
+	// terminal state is restored even when the user kills the process with a
+	// signal that bypasses WindowManager.stop().
+	const screen  = new Screen({ altScreen: true, hideCursor: true });
+	let { width, height } = screen.getSize();
 
 	screen.fill(' ', screen.registerStyle({ background: 234 }));
 
@@ -39,9 +43,20 @@ const main = async (): Promise<void> => {
 		exitKeys: ['q', '\x03'],
 		onExit:   () => {
 			if (demoTimer) clearInterval(demoTimer);
+			screen.dispose();
 			process.exit(0);
 		},
 		mouse:    true,
+	});
+
+	// 0.19.0: SIGWINCH autoresize. The Screen reflows percentage-based children
+	// for us; the demo only needs to redraw the current-size label in the
+	// status bar so the new geometry is visible at runtime.
+	screen.on('resize', size => {
+		width  = size.width;
+		height = size.height;
+		redrawStatusBar();
+		screen.render();
 	});
 
 	const layoutPath = join(dirname(fileURLToPath(import.meta.url)), 'layout.yaml');
@@ -67,16 +82,22 @@ const main = async (): Promise<void> => {
 	const shortcutId  = screen.registerStyle({ background: 24, foreground: 220, bold: true });
 	const sepId       = screen.registerStyle({ background: 24, foreground: 110 });
 	const dimId       = screen.registerStyle({ background: 24, foreground: 244, dim: true });
-	result.get('statusBar')!.writeText([
-		{ text: ` ${width}×${height}  ` },
-		{ text: '│', style: sepId },
-		{ text: '  ' },
-		{ text: 'Tab',   style: shortcutId }, { text: ' focus  ' },
-		{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
-		{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
-		{ text: 'q',     style: shortcutId }, { text: ' quit ' },
-		{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
-	], { style: statusBase });
+	const statusBar   = result.get('statusBar')!;
+	/** Repaints the status bar so the live width × height label tracks SIGWINCH. */
+	const redrawStatusBar = (): void => {
+		statusBar.clear();
+		statusBar.writeText([
+			{ text: ` ${width}×${height}  ` },
+			{ text: '│', style: sepId },
+			{ text: '  ' },
+			{ text: 'Tab',   style: shortcutId }, { text: ' focus  ' },
+			{ text: '←/→',   style: shortcutId }, { text: ' tabs   ' },
+			{ text: 'Space', style: shortcutId }, { text: ' toggle  ' },
+			{ text: 'q',     style: shortcutId }, { text: ' quit ' },
+			{ text: ' · emoji 🚀 CJK 日本語 · ', style: dimId },
+		], { style: statusBase });
+	};
+	redrawStatusBar();
 
 	// ── Resource labels in monitorPanel ──────────────────────────────────────
 	const labelStyle  = screen.registerStyle({ foreground: 245 });
