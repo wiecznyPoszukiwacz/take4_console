@@ -42,6 +42,9 @@ export { Spinner }        from './Screen/controls/Spinner.mjs';
 // ── YAML layout builder ───────────────────────────────────────────────────────
 export { InterfaceBuilder } from './Screen/InterfaceBuilder.mjs';
 
+// ── Unicode text width helpers ────────────────────────────────────────────────
+export { charWidth, stringWidth, setPuaWidth, getPuaWidth } from './Screen/textWidth.mjs';
+
 // ── Built-in style name constants ─────────────────────────────────────────────
 export {
 	BUILTIN_WINDOW_BG,
@@ -69,6 +72,7 @@ export type {
 
 	// Window / border
 	BorderStyle,
+	BorderChars,
 	WindowBorder,
 	WindowProperties,
 	WriteTextOptions,

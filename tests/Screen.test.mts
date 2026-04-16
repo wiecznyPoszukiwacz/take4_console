@@ -134,5 +134,29 @@ describe('Screen', () => {
       const output = writeSpy.mock.calls[0][0] as string;
       expect(output).toContain('38;2;255;0;0');
     });
+
+    it('emits a wide character without emitting its continuation cell', () => {
+      screen.setCell(0, 0, '日');
+      screen.setCell(1, 0, '');         // continuation sentinel
+      screen.setCell(2, 0, 'X');
+      screen.render();
+      const output = writeSpy.mock.calls[0][0] as string;
+      // The wide char and the trailing X must appear; the empty sentinel does not add a cell.
+      expect(output).toContain('日');
+      expect(output).toContain('X');
+      // Style sequence repetitions are bounded: one for the wide char + one for X (continuation skipped).
+      const charsBetween = output.split('日')[1] ?? '';
+      expect(charsBetween).toContain('X');
+    });
+
+    it('emits a wide character via Window.writeText through Screen render', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 1) });
+      win.writeText('日x');
+      screen.addChild(win);
+      screen.render();
+      const output = writeSpy.mock.calls[0][0] as string;
+      expect(output).toContain('日');
+      expect(output).toContain('x');
+    });
   });
 });

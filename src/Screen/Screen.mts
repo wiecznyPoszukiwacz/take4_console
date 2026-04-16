@@ -44,8 +44,12 @@ export class Screen extends Window {
 		const styleIds = this.region.getStyleIds();
 		let output = '\x1b[H';
 		for (let i = 0; i < chars.length; i++) {
+			const ch = chars[i];
+			// Empty-string sentinel = continuation cell of a wide character;
+			// terminal cursor was already advanced by 2 when its left half was emitted.
+			if (ch === '') continue;
 			output += this.buildAnsiSequence(reg.get(styleIds[i]));
-			output += chars[i];
+			output += ch;
 		}
 		output += '\x1b[0m';
 		process.stdout.write(output);

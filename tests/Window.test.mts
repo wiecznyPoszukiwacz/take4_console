@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Window } from '../src/Screen/Window.mjs';
 import { StyleRegistry } from '../src/Screen/StyleRegistry.mjs';
 import { setRegistry } from '../src/Screen/RegistryHolder.mjs';
+import { setPuaWidth } from '../src/Screen/textWidth.mjs';
 import { Pos } from '../src/Screen/Pos.mjs';
 import { Size } from '../src/Screen/Size.mjs';
 
@@ -510,6 +511,171 @@ describe('Window', () => {
       parent.render();
       // child's top-left corner should not be dim
       expect(parent.getCell(1, 1).attributes.dim).toBeUndefined();
+    });
+  });
+
+  describe('writeText() with wide characters', () => {
+    let win: Window;
+
+    beforeEach(() => {
+      setRegistry(new StyleRegistry());
+      win = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+    });
+
+    afterEach(() => {
+      setPuaWidth(1);
+    });
+
+    it('places a CJK character in two consecutive cells', () => {
+      win.writeText('日');
+      expect(win.getCell(0, 0).char).toBe('日');
+      expect(win.getCell(1, 0).char).toBe('');
+    });
+
+    it('advances the cursor by 2 after a wide character', () => {
+      win.writeText('日a');
+      expect(win.getCell(0, 0).char).toBe('日');
+      expect(win.getCell(1, 0).char).toBe('');
+      expect(win.getCell(2, 0).char).toBe('a');
+    });
+
+    it('places an emoji (supplementary plane) in two consecutive cells', () => {
+      win.writeText('🚀');
+      expect(win.getCell(0, 0).char).toBe('🚀');
+      expect(win.getCell(1, 0).char).toBe('');
+    });
+
+    it('skips a wide character whose right half would overflow the right edge', () => {
+      // window is 10 wide → last column is x=9, wide char at x=9 has no room for right half
+      win.writeText('aaaaaaaaa日');  // 9 ASCII + wide; wide would land at x=9
+      expect(win.getCell(8, 0).char).toBe('a');
+      // wide char skipped → cell 9 stays at the space-filled default
+      expect(win.getCell(9, 0).char).toBe(' ');
+    });
+
+    it('skips zero-width combining marks but renders the base character', () => {
+      win.writeText('e\u0301a'); // e + combining acute + a
+      expect(win.getCell(0, 0).char).toBe('e');
+      expect(win.getCell(1, 0).char).toBe('a');
+    });
+
+    it('skips control codes silently', () => {
+      win.writeText('a\x07b');
+      expect(win.getCell(0, 0).char).toBe('a');
+      expect(win.getCell(1, 0).char).toBe('b');
+    });
+
+    it('honours the configured PUA width when placing a NerdFont glyph', () => {
+      setPuaWidth(2);
+      const win2 = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      win2.writeText('\uF005a');
+      expect(win2.getCell(0, 0).char).toBe('\uF005');
+      expect(win2.getCell(1, 0).char).toBe('');
+      expect(win2.getCell(2, 0).char).toBe('a');
+    });
+
+    it('newline returns startX and continues with wide characters', () => {
+      win.writeText('日\n語');
+      expect(win.getCell(0, 0).char).toBe('日');
+      expect(win.getCell(1, 0).char).toBe('');
+      expect(win.getCell(0, 1).char).toBe('語');
+      expect(win.getCell(1, 1).char).toBe('');
+    });
+  });
+
+  describe('getTextWidth()', () => {
+    beforeEach(() => {
+      setRegistry(new StyleRegistry());
+    });
+
+    it('matches stringWidth for narrow text', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      expect(win.getTextWidth('hello')).toBe(5);
+    });
+
+    it('counts wide CJK characters as 2 cells each', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      expect(win.getTextWidth('日本語')).toBe(6);
+    });
+
+    it('counts emoji as 2 cells each', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      expect(win.getTextWidth('🚀x')).toBe(3);
+    });
+  });
+
+  describe('extended border styles', () => {
+    beforeEach(() => {
+      setRegistry(new StyleRegistry());
+    });
+
+    it('thick style uses heavy box-drawing characters', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'thick' } });
+      win.render();
+      expect(win.getCell(0, 0).char).toBe('┏');
+      expect(win.getCell(4, 0).char).toBe('┓');
+      expect(win.getCell(0, 3).char).toBe('┗');
+      expect(win.getCell(4, 3).char).toBe('┛');
+      expect(win.getCell(2, 0).char).toBe('━');
+      expect(win.getCell(0, 1).char).toBe('┃');
+    });
+
+    it('dashed style uses dashed lines with light corners', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'dashed' } });
+      win.render();
+      expect(win.getCell(0, 0).char).toBe('┌');
+      expect(win.getCell(2, 0).char).toBe('╌');
+      expect(win.getCell(0, 1).char).toBe('╎');
+    });
+
+    it('ascii style uses + for corners and -|', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'ascii' } });
+      win.render();
+      expect(win.getCell(0, 0).char).toBe('+');
+      expect(win.getCell(4, 0).char).toBe('+');
+      expect(win.getCell(0, 3).char).toBe('+');
+      expect(win.getCell(4, 3).char).toBe('+');
+      expect(win.getCell(2, 0).char).toBe('-');
+      expect(win.getCell(0, 1).char).toBe('|');
+    });
+
+    it("style 'none' draws nothing and consumes no inner space", () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(5, 4), border: { top: true, right: true, bottom: true, left: true, style: 'none' } });
+      win.render();
+      expect(win.getCell(0, 0).char).toBe(' ');
+      expect(win.getCell(4, 3).char).toBe(' ');
+      expect(win.getInnerOffset()).toEqual({ x: 0, y: 0 });
+      expect(win.getInnerSize()).toEqual({ width: 5, height: 4 });
+    });
+
+    it('chars override replaces individual glyphs while keeping the rest of the style', () => {
+      const win = new Window({
+        pos: new Pos(0, 0),
+        size: new Size(5, 4),
+        border: { top: true, right: true, bottom: true, left: true, style: 'single', chars: { topLeft: '◆', topRight: '◆' } },
+      });
+      win.render();
+      // overridden corners
+      expect(win.getCell(0, 0).char).toBe('◆');
+      expect(win.getCell(4, 0).char).toBe('◆');
+      // bottom corners untouched (still inherited from 'single')
+      expect(win.getCell(0, 3).char).toBe('└');
+      expect(win.getCell(4, 3).char).toBe('┘');
+      // edges untouched
+      expect(win.getCell(2, 0).char).toBe('─');
+    });
+
+    it('chars override can swap horizontal and vertical glyphs', () => {
+      const win = new Window({
+        pos: new Pos(0, 0),
+        size: new Size(5, 4),
+        border: { top: true, right: true, bottom: true, left: true, style: 'single', chars: { horizontal: '═', vertical: '║' } },
+      });
+      win.render();
+      expect(win.getCell(2, 0).char).toBe('═');
+      expect(win.getCell(0, 1).char).toBe('║');
+      // corners stay 'single'
+      expect(win.getCell(0, 0).char).toBe('┌');
     });
   });
 });

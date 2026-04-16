@@ -57,8 +57,39 @@ export interface TerminalSize {
   height: number;
 }
 
-/** Box-drawing character style for window borders. */
-export type BorderStyle = 'single' | 'double' | 'rounded';
+/** Box-drawing character style for window borders.
+ *  - 'single'  ─│┌┐└┘     classic light box drawing
+ *  - 'double'  ═║╔╗╚╝     double-line box drawing
+ *  - 'rounded' ─│╭╮╰╯     light box with rounded corners
+ *  - 'thick'   ━┃┏┓┗┛     heavy / bold box drawing
+ *  - 'dashed'  ╌╎┌┐└┘     dashed lines with light corners
+ *  - 'ascii'   -|+        plain ASCII fallback for non-Unicode terminals
+ *  - 'none'    placeholder equivalent to no border (no insets, no painting). */
+export type BorderStyle = 'single' | 'double' | 'rounded' | 'thick' | 'dashed' | 'ascii' | 'none';
+
+/** Glyphs used to draw a window border. The four corners and the two edge
+ *  characters are mandatory; T-junctions and the cross are optional and only
+ *  used by composite controls (tables, split panes) that draw inner lines. */
+export interface BorderChars {
+  /** Horizontal edge glyph (top and bottom rows). */
+  horizontal: string;
+  /** Vertical edge glyph (left and right columns). */
+  vertical: string;
+  topLeft: string;
+  topRight: string;
+  bottomLeft: string;
+  bottomRight: string;
+  /** T-junction joining a horizontal line to the right side of a vertical line. */
+  verticalLeft?: string;
+  /** T-junction joining a horizontal line to the left side of a vertical line. */
+  verticalRight?: string;
+  /** T-junction joining a vertical line to the bottom of a horizontal line. */
+  horizontalTop?: string;
+  /** T-junction joining a vertical line to the top of a horizontal line. */
+  horizontalBottom?: string;
+  /** Four-way intersection. */
+  cross?: string;
+}
 
 /** Per-side border configuration. */
 export interface WindowBorder {
@@ -70,6 +101,10 @@ export interface WindowBorder {
   style?:  BorderStyle;
   /** Border color. Default: inherits from cell. */
   color?:  Color;
+  /** Optional per-glyph overrides applied on top of the chosen `style`'s char set.
+   *  Useful for swapping individual characters (e.g. a custom corner) without
+   *  redefining the entire set. */
+  chars?:  Partial<BorderChars>;
 }
 
 /** Common properties shared by Window and all controls. Passed as the first constructor parameter. */

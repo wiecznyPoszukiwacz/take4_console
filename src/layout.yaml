@@ -35,7 +35,10 @@ windows:
         pos: { x: 1, y: 2 }
         size: { width: "46%", height: "43%" }
         background: 235
-        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        # Demonstrates the per-character override: the corners are swapped for diamond glyphs
+        # while the rest of the 'single' style is kept untouched.
+        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238,
+                  chars: { topLeft: '◆', topRight: '◆' } }
         content: "Personal info"
         children:
           - id: tbUsername
@@ -124,7 +127,8 @@ windows:
         pos: { x: 1, y: "46%" }
         size: { width: "46%", height: "43%" }
         background: 235
-        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        # Demonstrates the new 'thick' (heavy) box-drawing style.
+        border: { top: true, right: true, bottom: true, left: true, style: thick, color: 38 }
         content: "Resources"
         children:
           - id: pbCpu
@@ -204,7 +208,8 @@ windows:
         pos: { x: "81%", y: "46%" }
         size: { width: "17%", height: "43%" }
         background: 235
-        border: { top: true, right: true, bottom: true, left: true, style: single, color: 238 }
+        # Demonstrates the new 'dashed' style.
+        border: { top: true, right: true, bottom: true, left: true, style: dashed, color: 33 }
         content: "Events"
         children:
           - id: eventsList

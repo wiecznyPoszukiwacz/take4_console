@@ -121,11 +121,15 @@ const main = async (): Promise<void> => {
 		];
 	});
 
+	// A few entries embed double-width emoji (UTF-16 surrogate pairs) so the
+	// East-Asian-width-aware writeText() introduced in 0.17.0 is exercised
+	// at runtime — wide glyphs occupy two consecutive buffer cells with a ''
+	// continuation sentinel that Screen.render() skips.
 	const EVENT_TEMPLATES: Array<{ level: EventLevel; message: string }> = [
 		{ level: 'ok',    message: 'user logged in'     },
-		{ level: 'ok',    message: 'cache warmed'       },
+		{ level: 'ok',    message: 'cache warmed 🚀'    },
 		{ level: 'ok',    message: 'metric collected'   },
-		{ level: 'ok',    message: 'job completed'      },
+		{ level: 'ok',    message: 'job completed 💾'   },
 		{ level: 'warn',  message: 'config reloaded'    },
 		{ level: 'ok',    message: 'heartbeat ok'       },
 		{ level: 'ok',    message: 'worker spawned'     },

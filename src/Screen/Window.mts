@@ -1,16 +1,27 @@
-import type { Cell, StyleId, BorderStyle, WindowBorder, WindowProperties, WriteTextOptions, TerminalSize } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, TerminalSize } from './types.mjs';
 import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
 import { getRegistry } from './RegistryHolder.mjs';
+import { charWidth, stringWidth } from './textWidth.mjs';
 import type { Pos } from './Pos.mjs';
 import { Size } from './Size.mjs';
 
-/** Characters used for each border style. */
-const BORDER_CHARS: Record<BorderStyle, { h: string; v: string; tl: string; tr: string; bl: string; br: string }> = {
-	single:  { h: '─', v: '│', tl: '┌', tr: '┐', bl: '└', br: '┘' },
-	double:  { h: '═', v: '║', tl: '╔', tr: '╗', bl: '╚', br: '╝' },
-	rounded: { h: '─', v: '│', tl: '╭', tr: '╮', bl: '╰', br: '╯' },
+/** Glyph table for each visual border style. The 'none' style is handled
+ *  separately (paintBorder bails out early), so it does not appear here. */
+const BORDER_CHARS: Record<Exclude<BorderStyle, 'none'>, Required<BorderChars>> = {
+	single:  { horizontal: '─', vertical: '│', topLeft: '┌', topRight: '┐', bottomLeft: '└', bottomRight: '┘',
+	           verticalLeft: '┤', verticalRight: '├', horizontalTop: '┴', horizontalBottom: '┬', cross: '┼' },
+	double:  { horizontal: '═', vertical: '║', topLeft: '╔', topRight: '╗', bottomLeft: '╚', bottomRight: '╝',
+	           verticalLeft: '╣', verticalRight: '╠', horizontalTop: '╩', horizontalBottom: '╦', cross: '╬' },
+	rounded: { horizontal: '─', vertical: '│', topLeft: '╭', topRight: '╮', bottomLeft: '╰', bottomRight: '╯',
+	           verticalLeft: '┤', verticalRight: '├', horizontalTop: '┴', horizontalBottom: '┬', cross: '┼' },
+	thick:   { horizontal: '━', vertical: '┃', topLeft: '┏', topRight: '┓', bottomLeft: '┗', bottomRight: '┛',
+	           verticalLeft: '┫', verticalRight: '┣', horizontalTop: '┻', horizontalBottom: '┳', cross: '╋' },
+	dashed:  { horizontal: '╌', vertical: '╎', topLeft: '┌', topRight: '┐', bottomLeft: '└', bottomRight: '┘',
+	           verticalLeft: '┤', verticalRight: '├', horizontalTop: '┴', horizontalBottom: '┬', cross: '┼' },
+	ascii:   { horizontal: '-', vertical: '|', topLeft: '+', topRight: '+', bottomLeft: '+', bottomRight: '+',
+	           verticalLeft: '+', verticalRight: '+', horizontalTop: '+', horizontalBottom: '+', cross: '+' },
 };
 
 /** Resolves a border option (true / object / false) to a full WindowBorder or false. */
@@ -92,10 +103,11 @@ export class Window {
 		return this.region.getSize();
 	}
 
-	/** Returns the number of cells consumed by decorations on each edge. */
+	/** Returns the number of cells consumed by decorations on each edge.
+	 *  The explicit 'none' border style is treated as no border (no insets). */
 	private borderInset(): { top: number; right: number; bottom: number; left: number } {
 		const b = this.border;
-		if (!b) return { top: 0, right: 0, bottom: 0, left: 0 };
+		if (!b || b.style === 'none') return { top: 0, right: 0, bottom: 0, left: 0 };
 		return {
 			top:    (b.top    ?? false) ? 1 : 0,
 			right:  (b.right  ?? false) ? 1 : 0,
@@ -237,6 +249,11 @@ export class Window {
 	 *  Coordinates are relative to the inner content area (i.e. decorations such as borders are excluded).
 	 *  Newline characters move to the next row, resetting x to startX.
 	 *  Characters outside the inner bounds are silently clipped.
+	 *  Wide characters (CJK, emoji, double-width NerdFonts) occupy two consecutive cells:
+	 *  the second cell stores '' as a continuation sentinel, so terminal cursor advancement
+	 *  during render() stays aligned with the buffer indices. Wide chars whose right half
+	 *  would overflow the inner area are skipped entirely.
+	 *  Zero-width codepoints (combining marks, format chars, control chars) are skipped.
 	 *  When no style is provided, automatically picks disabledStyleId, focusedStyleId, or normalStyleId
 	 *  based on the current disabled/focused state. */
 	public writeText(text: string, options?: WriteTextOptions): void {
@@ -257,11 +274,29 @@ export class Window {
 				cy++;
 				continue;
 			}
-			if (cx >= ox && cx < ox + iw && cy >= oy && cy < oy + ih) {
-				this.setCell(cx, cy, ch, styleId);
+			const w = charWidth(ch.codePointAt(0)!);
+			if (w === 0) continue;
+			const inRow = cy >= oy && cy < oy + ih;
+			if (w === 2) {
+				if (inRow && cx >= ox && cx + 1 < ox + iw) {
+					this.setCell(cx,     cy, ch, styleId);
+					this.setCell(cx + 1, cy, '',  styleId);
+				}
+			} else {
+				if (inRow && cx >= ox && cx < ox + iw) {
+					this.setCell(cx, cy, ch, styleId);
+				}
 			}
-			cx++;
+			cx += w;
 		}
+	}
+
+	/** Returns the display width (in terminal cells) of a string,
+	 *  honouring wide characters (CJK, emoji, double-width NerdFonts) and
+	 *  ignoring zero-width codepoints. Useful for sizing labels or aligning
+	 *  text in custom controls. */
+	public getTextWidth(text: string): number {
+		return stringWidth(text);
 	}
 
 	/**
@@ -305,13 +340,18 @@ export class Window {
 		}
 	}
 
-	/** Draws border characters on the display buffer edges. When inactive, adds dim to border cells. */
+	/** Draws border characters on the display buffer edges. When inactive, adds dim to border cells.
+	 *  Uses the glyph table for `border.style`, with optional per-character overrides
+	 *  via `border.chars`. The 'none' style is a no-op placeholder. */
 	private paintBorder(): void {
 		if (!this.border) return;
 		const b = this.border;
+		const style = b.style ?? 'single';
+		if (style === 'none') return;
 		const { width, height } = this.region.getSize();
 		if (width < 2 && height < 2) return;
-		const chars = BORDER_CHARS[b.style ?? 'single'];
+		const baseChars = BORDER_CHARS[style];
+		const chars: Required<BorderChars> = b.chars ? { ...baseChars, ...b.chars } : baseChars;
 
 		const bgColor = this.background !== 0
 			? this.registry.get(this.background).background
@@ -334,9 +374,9 @@ export class Window {
 				const isLeft  = x === 0;
 				const isRight = x === width - 1;
 				let ch: string;
-				if (isLeft  && left)  ch = chars.tl;
-				else if (isRight && right) ch = chars.tr;
-				else ch = chars.h;
+				if (isLeft  && left)  ch = chars.topLeft;
+				else if (isRight && right) ch = chars.topRight;
+				else ch = chars.horizontal;
 				this.region.setCell(x, 0, ch, baseId);
 			}
 		}
@@ -347,9 +387,9 @@ export class Window {
 				const isLeft  = x === 0;
 				const isRight = x === width - 1;
 				let ch: string;
-				if (isLeft  && left)  ch = chars.bl;
-				else if (isRight && right) ch = chars.br;
-				else ch = chars.h;
+				if (isLeft  && left)  ch = chars.bottomLeft;
+				else if (isRight && right) ch = chars.bottomRight;
+				else ch = chars.horizontal;
 				this.region.setCell(x, height - 1, ch, baseId);
 			}
 		}
@@ -359,7 +399,7 @@ export class Window {
 			const rowStart = top    ? 1 : 0;
 			const rowEnd   = bottom ? height - 2 : height - 1;
 			for (let y = rowStart; y <= rowEnd; y++) {
-				this.region.setCell(0, y, chars.v, baseId);
+				this.region.setCell(0, y, chars.vertical, baseId);
 			}
 		}
 
@@ -368,7 +408,7 @@ export class Window {
 			const rowStart = top    ? 1 : 0;
 			const rowEnd   = bottom ? height - 2 : height - 1;
 			for (let y = rowStart; y <= rowEnd; y++) {
-				this.region.setCell(width - 1, y, chars.v, baseId);
+				this.region.setCell(width - 1, y, chars.vertical, baseId);
 			}
 		}
 	}

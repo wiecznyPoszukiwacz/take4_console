@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.17.0] – 2026-04-16
+
+### Added — backlog P0-7 (text measurement z East-Asian width)
+- **`src/Screen/textWidth.mts`** — nowy moduł z funkcjami `charWidth(cp)`,
+  `stringWidth(str)`, `setPuaWidth(1|2)`, `getPuaWidth()`. Tabela szerokości
+  oparta o Unicode East Asian Width (kategorie W i F) plus zero-width
+  control / combining / format / variation selectors / ZWJ / BOM.
+- **`Window.getTextWidth(text)`** — zwraca display width tekstu w komórkach
+  terminala, odpowiednik `stringWidth` dostępny na każdym Window/kontrolce.
+- **`Window.writeText`** uwzględnia szerokość znaków:
+  - znaki szerokie (CJK, emoji, double-width NerdFonts) zajmują dwie kolejne
+    komórki — `''` w komórce kontynuacyjnej jako sentinel;
+  - kursor wewnątrz pętli zaawansowuje się o `charWidth(ch)`;
+  - znaki o szerokości 0 (combining, control) są pomijane;
+  - wide znaki, których prawa połówka wykraczałaby poza inner-width, są
+    pomijane w całości (zachowanie alignmentu).
+- **`Screen.render`** pomija continuation cells (`ch === ''`), dzięki czemu
+  ANSI output nie emituje stub'a — terminal po wide znaku już ma kursor
+  zaawansowany o 2 kolumny.
+- **Konfigurowalna szerokość PUA** (NerdFonts) przez `setPuaWidth(1|2)` —
+  domyślnie `1` (większość patched fontów ma single-cell glyphs).
+- Eksportowane z `take4-console` barrel-a: `charWidth`, `stringWidth`,
+  `setPuaWidth`, `getPuaWidth`.
+
+### Changed
+- **Demo (`src/demo.mts`)** — kilka templates eventów ma double-width
+  emoji (`'cache warmed 🚀'`, `'job completed 💾'`); demo prezentuje, że
+  wide glyphs nie psują wyrównania w `ListBox` (przy emoji surrogate-pair,
+  gdzie `length=2 = displayWidth=2`).
+
+### Added — backlog P0-9 (rozszerzenie BorderStyle)
+- **`BorderStyle`** rozszerzony o cztery nowe warianty:
+  - `'thick'` — heavy box-drawing (`━┃┏┓┗┛`),
+  - `'dashed'` — dashed lines z light corners (`╌╎┌┐└┘`),
+  - `'ascii'` — fallback ASCII (`-|+`),
+  - `'none'` — jawny placeholder równoważny brakowi ramki (bez insetów).
+- **`BorderChars`** — nowy interfejs publiczny opisujący komplet glifów
+  (krawędzie, narożniki, opcjonalne T-junctions i cross dla
+  przyszłych kontrolek typu Table).
+- **`WindowBorder.chars?: Partial<BorderChars>`** — per-glyph override
+  aplikowany na bazowy zestaw wybranego `style`. Pozwala podmienić tylko
+  wybrane znaki (np. narożniki) bez redefiniowania całej tabeli.
+- Eksportowane z `take4-console` barrel-a: typ `BorderChars`.
+
+### Changed — backlog P0-9
+- **`Window.borderInset`** traktuje `style: 'none'` jako brak ramki —
+  `getInnerOffset()` / `getInnerSize()` nie odejmują 1 cell-a po stronach.
+- **`Window.paintBorder`** mergeuje `border.chars` na bazowy zestaw
+  (`{ ...baseChars, ...border.chars }`) i przerywa się natychmiast dla
+  `'none'`.
+- **Internal `BORDER_CHARS`** używa pełnych nazw glifów z `BorderChars`
+  (`horizontal`/`vertical`/`topLeft`/…) zamiast wcześniejszych skrótów
+  (`h`/`v`/`tl`/…). Pole jest prywatne — bez wpływu na konsumentów.
+- **Demo (`src/layout.yaml`)** — `monitorPanel` używa `style: thick`,
+  `eventsPanel` używa `style: dashed`, `leftPanel` demonstruje override
+  pojedynczych glifów (`chars: { topLeft: '◆', topRight: '◆' }`).
+
+### Docs
+- Dodano `doc/p0-7-text-width.md` — pełny opis API, algorytmu sentinela
+  continuation cell, tabel Unicode i kompatybilności wstecznej.
+- Dodano `doc/p0-9-border-styles.md` — opis nowych stylów, tabela
+  glifów, semantyka `'none'` i przykłady override `chars`.
+
 ## [0.16.0] – 2026-04-16
 
 ### Added — backlog P0-1 (custom per-row rendering w ListBox)
