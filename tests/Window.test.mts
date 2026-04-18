@@ -1282,4 +1282,106 @@ describe('Window', () => {
       expect(w.getId()).toBeUndefined();
     });
   });
+
+  describe('margin option', () => {
+    it('default margin is zero on every side', () => {
+      setRegistry(new StyleRegistry());
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(5, 5) });
+      expect(w.getMargin()).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    });
+
+    it('normalises a uniform number to every side', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(5, 5), margin: 3 });
+      expect(w.getMargin()).toEqual({ top: 3, right: 3, bottom: 3, left: 3 });
+    });
+
+    it('normalises a [vertical, horizontal] tuple', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(5, 5), margin: [1, 4] });
+      expect(w.getMargin()).toEqual({ top: 1, right: 4, bottom: 1, left: 4 });
+    });
+
+    it('normalises a partial per-side record', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(5, 5), margin: { top: 2, left: 1 } });
+      expect(w.getMargin()).toEqual({ top: 2, right: 0, bottom: 0, left: 1 });
+    });
+
+    it('does not affect the window inner area (margin is outer)', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(10, 6), margin: 2 });
+      expect(w.getInnerSize()).toEqual({ width: 10, height: 6 });
+      expect(w.getInnerOffset()).toEqual({ x: 0, y: 0 });
+    });
+
+    it('shifts child position in absolute layout by (marginLeft, marginTop)', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10) });
+      const child  = new Window({ pos: new Pos(3, 2), size: new Size(4, 3), margin: { top: 1, left: 2 } });
+      parent.addChild(child);
+      expect(child.x).toBe(3 + 2);
+      expect(child.y).toBe(2 + 1);
+    });
+
+    it('charges main-axis margin against flex remainder (row layout)', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex(), margin: { left: 2, right: 3 } });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      // 30 total - 5 (a's main margin) = 25 distributed between two grow=1 → 12 / 13 (last takes leftover)
+      expect(a.getSize().width).toBe(12);
+      expect(b.getSize().width).toBe(13);
+      expect(a.x).toBe(2);                 // 0 + marginLeft
+      expect(b.x).toBe(2 + 12 + 3);        // after a's slot (inner + marginLeft + marginRight)
+    });
+
+    it('reduces cross-axis stretch by margin (column layout)', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 20), layout: 'column' });
+      const child  = new Window({ pos: Pos.flex(), size: new Size(content(), 6), margin: { left: 3, right: 2 } });
+      parent.addChild(child);
+      expect(child.getSize()).toEqual({ width: 20 - 3 - 2, height: 6 });
+      expect(child.x).toBe(3);
+      expect(child.y).toBe(0);
+    });
+
+    it('respects margin plus gap between flex siblings', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 5), layout: 'row', gap: 1 });
+      const a = new Window({ pos: Pos.flex(), size: new Size(4, 3), margin: { right: 2 } });
+      const b = new Window({ pos: Pos.flex(), size: new Size(4, 3) });
+      parent.addChild(a);
+      parent.addChild(b);
+      expect(a.x).toBe(0);
+      // a inner (4) + a marginRight (2) + gap (1) = 7 → b.x = 7
+      expect(b.x).toBe(4 + 2 + 1);
+    });
+
+    it('stacks on top of padding without affecting inner area', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), padding: 1, layout: 'row' });
+      const child  = new Window({ pos: Pos.flex(), size: Size.flex(), margin: 1 });
+      parent.addChild(child);
+      // parent inner 18 x 8; child loses 2 on each axis → 16 x 6, offset (1+1, 1+1)
+      expect(child.getSize()).toEqual({ width: 16, height: 6 });
+      expect(child.x).toBe(2);
+      expect(child.y).toBe(2);
+    });
+
+    it('shrinks cell area in grid layout and offsets by margin', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), layout: 'grid', gridColumns: 2 });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex(), margin: 1 });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      // cellW = 10, cellH = 10. a loses 2 on each axis → 8 x 8 at (1, 1).
+      expect(a.getSize()).toEqual({ width: 8, height: 8 });
+      expect(a.x).toBe(1);
+      expect(a.y).toBe(1);
+      // b sits at cell (1, 0) at full cell size.
+      expect(b.getSize()).toEqual({ width: 10, height: 10 });
+      expect(b.x).toBe(10);
+      expect(b.y).toBe(0);
+    });
+  });
 });

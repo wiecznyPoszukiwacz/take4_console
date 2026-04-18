@@ -594,6 +594,31 @@ windows:
       expect(b.y).toBe(1 + 4 + 1);
     });
 
+    it('margin on a flex child reserves outer spacing inside the parent slot', () => {
+      const yaml = `
+windows:
+  - id: row
+    size: { width: 20, height: 5 }
+    layout: row
+    children:
+      - id: a
+        pos: flex
+        size: flex
+        margin: { left: 2, right: 3 }
+      - id: b
+        pos: flex
+        size: flex
+`;
+      const result = builder.build(yaml, screen);
+      const a = result.get('a')!;
+      const b = result.get('b')!;
+      // 20 - 5 (a's h-margin) = 15 split 1:1 → 7 / 8 (last takes leftover)
+      expect(a.getSize().width).toBe(7);
+      expect(b.getSize().width).toBe(8);
+      expect(a.x).toBe(2);
+      expect(b.x).toBe(2 + 7 + 3);
+    });
+
     it('grid layout distributes children into cells', () => {
       const yaml = `
 windows:

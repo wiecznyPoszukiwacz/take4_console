@@ -1,4 +1,4 @@
-import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize, LayoutMode, AlignItems, JustifyContent, Padding, PaddingSpec, DimSpec } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize, LayoutMode, AlignItems, JustifyContent, Padding, PaddingSpec, Margin, MarginSpec, DimSpec } from './types.mjs';
 import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
@@ -77,6 +77,23 @@ const resolvePadding = (spec: PaddingSpec | undefined): Padding => {
 	};
 };
 
+/** Normalises a MarginSpec to a full Margin record (missing sides → 0).
+ *  Shares the PaddingSpec shape so the two helpers are interchangeable. */
+const resolveMargin = (spec: MarginSpec | undefined): Margin => {
+	if (spec === undefined) return { top: 0, right: 0, bottom: 0, left: 0 };
+	if (typeof spec === 'number') return { top: spec, right: spec, bottom: spec, left: spec };
+	if (Array.isArray(spec)) {
+		const [v = 0, h = 0] = spec;
+		return { top: v, right: h, bottom: v, left: h };
+	}
+	return {
+		top:    spec.top    ?? 0,
+		right:  spec.right  ?? 0,
+		bottom: spec.bottom ?? 0,
+		left:   spec.left   ?? 0,
+	};
+};
+
 export class Window {
 	public x: number;
 	public y: number;
@@ -120,6 +137,10 @@ export class Window {
 	/** Padding applied inside the border (in addition to the border inset).
 	 *  Influences `getInnerSize()` / `getInnerOffset()`. */
 	private padding: Padding;
+	/** Outer spacing reserved around this window inside its parent's layout.
+	 *  Consumed by the parent's layout engine (absolute/flex/grid); does not
+	 *  influence this window's inner area. */
+	private margin: Margin;
 	/** Number of columns for `layout: 'grid'`. */
 	private gridColumns: number;
 	/** Cross-axis alignment for row/column layouts. */
@@ -160,6 +181,7 @@ export class Window {
 		this.layoutMode     = wp.layout         ?? 'absolute';
 		this.gap            = wp.gap            ?? 0;
 		this.padding        = resolvePadding(wp.padding);
+		this.margin         = resolveMargin(wp.margin);
 		this.gridColumns    = Math.max(1, wp.gridColumns ?? 1);
 		this.alignItems     = wp.alignItems     ?? 'stretch';
 		this.justifyContent = wp.justifyContent ?? 'start';
@@ -185,6 +207,12 @@ export class Window {
 	/** Returns the window dimensions (columns × rows). */
 	public getSize(): TerminalSize {
 		return this.region.getSize();
+	}
+
+	/** Returns a snapshot of the resolved per-side margin (in cells). The parent's
+	 *  layout engine reads this to reserve outer spacing around the child. */
+	public getMargin(): Readonly<Margin> {
+		return { ...this.margin };
 	}
 
 	/** Returns the number of cells consumed by decorations on each edge.
@@ -763,7 +791,10 @@ export class Window {
 	}
 
 	/** Absolute layout: each child independently resolves its Pos/Size against
-	 *  the parent's inner area — the pre-flex behaviour. */
+	 *  the parent's inner area — the pre-flex behaviour. A child's `margin`
+	 *  shifts the resolved position by `(marginLeft, marginTop)` without
+	 *  altering its size, so callers can push a window away from its declared
+	 *  anchor without recomputing coordinates by hand. */
 	private layoutAbsolute(pw: number, ph: number, ox: number, oy: number): void {
 		for (const child of this.children) {
 			if (!child.sizeSpec.isAbsolute()) {
@@ -772,8 +803,8 @@ export class Window {
 			}
 			const { width: cw, height: ch } = child.getSize();
 			const { x, y } = child.posSpec.resolve(pw, ph, cw, ch);
-			child.x = x + ox;
-			child.y = y + oy;
+			child.x = x + ox + child.margin.left;
+			child.y = y + oy + child.margin.top;
 		}
 	}
 
@@ -787,7 +818,13 @@ export class Window {
 	 *  distribution only when no child consumes slack via flex-grow. Invisible
 	 *  children are skipped so `setVisible(false)` effectively removes them
 	 *  from the stack. Children are ordered by `Pos.flex(order)` first, then
-	 *  by addChild insertion (stable). */
+	 *  by addChild insertion (stable).
+	 *
+	 *  Each child's `margin` reserves extra cells around it: the main axis
+	 *  loses `marginLeft+marginRight` (row) or `marginTop+marginBottom` (column)
+	 *  per child before distribution, and the cross axis loses `margin*` per
+	 *  child before alignment. Grow/shrink still apply to the inner size so the
+	 *  declared margin stays constant even when the child is flex-resized. */
 	private layoutFlex(mode: 'row' | 'column', pw: number, ph: number, ox: number, oy: number): void {
 		const ordered = this.orderedVisibleChildren();
 		if (ordered.length === 0) return;
@@ -796,7 +833,14 @@ export class Window {
 		const crossParent = isRow ? ph : pw;
 		const gap = this.gap;
 
-		// First pass: basis sizes per child.
+		// Per-child main/cross margin totals captured up-front so they stay
+		// constant across grow/shrink passes.
+		const mainMargin  = (c: Window): number => isRow ? c.margin.left + c.margin.right  : c.margin.top  + c.margin.bottom;
+		const crossMargin = (c: Window): number => isRow ? c.margin.top  + c.margin.bottom : c.margin.left + c.margin.right;
+
+		// First pass: basis sizes per child (inner, i.e. the child's own region
+		// without margin). Natural size is taken before margin so content-sized
+		// children keep their intrinsic footprint.
 		const items = ordered.map((c): FlexItem => {
 			const mainSpec  = isRow ? c.sizeSpec.getWidthSpec()  : c.sizeSpec.getHeightSpec();
 			const crossSpec = isRow ? c.sizeSpec.getHeightSpec() : c.sizeSpec.getWidthSpec();
@@ -809,10 +853,13 @@ export class Window {
 			};
 		});
 
-		// Distribute leftover main-axis space.
+		// Distribute leftover main-axis space. The parent sees each child's
+		// slot as `mainSize + mainMargin`, so margins are charged against the
+		// remaining space before grow/shrink.
 		const totalGap = Math.max(0, items.length - 1) * gap;
+		const totalMargin = items.reduce((s, it) => s + mainMargin(it.child), 0);
 		const totalMain = items.reduce((s, it) => s + it.mainSize, 0);
-		let remainder = mainParent - totalMain - totalGap;
+		let remainder = mainParent - totalMain - totalMargin - totalGap;
 		const totalGrow = items.reduce((s, it) => s + (it.mainSpec.mode === 'flex' ? it.mainSpec.grow : 0), 0);
 		if (remainder > 0 && totalGrow > 0) {
 			let distributed = 0;
@@ -839,17 +886,21 @@ export class Window {
 					it.mainSize = Math.max(0, it.mainSize - take);
 				}
 				const consumed = items.reduce((s, it) => s + it.mainSize, 0);
-				remainder = mainParent - consumed - totalGap;
+				remainder = mainParent - consumed - totalMargin - totalGap;
 			}
 		}
 
-		// Apply cross-axis stretch where allowed.
+		// Apply cross-axis stretch where allowed. Cross-axis margin is charged
+		// before stretch/clamp so a stretched child + its margin fits within
+		// crossParent.
 		for (const it of items) {
+			const cm = crossMargin(it.child);
+			const available = Math.max(0, crossParent - cm);
 			const mode = it.crossSpec.mode;
 			if (this.alignItems === 'stretch' && mode !== 'abs' && mode !== 'pct') {
-				it.crossSize = crossParent;
+				it.crossSize = available;
 			} else {
-				it.crossSize = Math.min(it.crossSize, crossParent);
+				it.crossSize = Math.min(it.crossSize, available);
 			}
 		}
 
@@ -873,7 +924,10 @@ export class Window {
 			}
 		}
 
-		// Write final sizes and positions.
+		// Write final sizes and positions. The child's main-axis starting
+		// coordinate is `cursor + marginLeading`; cursor then advances by
+		// `mainSize + mainMargin + itemSpacing` so the next slot is offset by
+		// this child's full footprint.
 		let cursor = mainStart;
 		for (const it of items) {
 			const mainSize  = Math.max(0, it.mainSize);
@@ -883,28 +937,34 @@ export class Window {
 			if (newW !== it.child.getSize().width || newH !== it.child.getSize().height) {
 				it.child.resizeRegions(newW, newH);
 			}
+			const m = it.child.margin;
+			const mainLead  = isRow ? m.left : m.top;
+			const mainTrail = isRow ? m.right : m.bottom;
+			const crossLead = isRow ? m.top  : m.left;
+			const cm = crossMargin(it.child);
 			let crossPos = 0;
 			if (this.alignItems !== 'stretch') {
-				const free = crossParent - crossSize;
+				const free = Math.max(0, crossParent - crossSize - cm);
 				if      (this.alignItems === 'center') crossPos = Math.floor(free / 2);
 				else if (this.alignItems === 'end')    crossPos = free;
 			}
 			if (isRow) {
-				it.child.x = ox + cursor;
-				it.child.y = oy + crossPos;
+				it.child.x = ox + cursor + mainLead;
+				it.child.y = oy + crossPos + crossLead;
 			} else {
-				it.child.x = ox + crossPos;
-				it.child.y = oy + cursor;
+				it.child.x = ox + crossPos + crossLead;
+				it.child.y = oy + cursor + mainLead;
 			}
-			cursor += mainSize + itemSpacing;
+			cursor += mainSize + mainLead + mainTrail + itemSpacing;
 		}
 	}
 
 	/** Grid layout: children are placed row-major into equally sized cells.
 	 *  Each cell's width is `(innerWidth - gap * (cols - 1)) / cols` (floored);
 	 *  heights use the same formula with the derived row count. Children are
-	 *  resized to the cell dimensions and positioned at the cell's top-left.
-	 *  Invisible children are skipped. */
+	 *  resized to the cell dimensions minus their own margin and positioned
+	 *  at the cell's top-left offset by `(marginLeft, marginTop)`. Invisible
+	 *  children are skipped. */
 	private layoutGrid(pw: number, ph: number, ox: number, oy: number): void {
 		const ordered = this.orderedVisibleChildren();
 		if (ordered.length === 0) return;
@@ -917,11 +977,14 @@ export class Window {
 			const child = ordered[i]!;
 			const c = i % cols;
 			const r = Math.floor(i / cols);
-			if (cellW !== child.getSize().width || cellH !== child.getSize().height) {
-				child.resizeRegions(cellW, cellH);
+			const m = child.margin;
+			const innerW = Math.max(0, cellW - m.left - m.right);
+			const innerH = Math.max(0, cellH - m.top  - m.bottom);
+			if (innerW !== child.getSize().width || innerH !== child.getSize().height) {
+				child.resizeRegions(innerW, innerH);
 			}
-			child.x = ox + c * (cellW + gap);
-			child.y = oy + r * (cellH + gap);
+			child.x = ox + c * (cellW + gap) + m.left;
+			child.y = oy + r * (cellH + gap) + m.top;
 		}
 	}
 

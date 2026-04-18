@@ -266,6 +266,7 @@ export class InterfaceBuilder {
       layout:         def.layout,
       gap:            def.gap,
       padding:        def.padding,
+      margin:         def.margin,
       gridColumns:    def.gridColumns,
       alignItems:     def.alignItems,
       justifyContent: def.justifyContent,

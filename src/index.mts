@@ -80,6 +80,8 @@ export type {
 	JustifyContent,
 	Padding,
 	PaddingSpec,
+	Margin,
+	MarginSpec,
 
 	// Window / border
 	BorderStyle,

@@ -197,6 +197,16 @@ export interface WindowProperties {
    *  padded inner area, and `getInnerSize()` / `getInnerOffset()` reflect the
    *  padding as well as the border. Default: 0 on every side. */
   padding?: PaddingSpec;
+  /** Outer spacing reserved around the window inside its parent's layout.
+   *  - In `row` / `column` flex layouts margin stacks with `gap`: each child
+   *    claims `intrinsic + marginMain` cells on the main axis, and its cross
+   *    extent is reduced by the cross margin.
+   *  - In `grid` layout the child fits inside `cell − margin` and is offset by
+   *    `marginTop` / `marginLeft` within the cell.
+   *  - In `absolute` layout margin shifts the child's resolved position by
+   *    `(marginLeft, marginTop)` without changing its size.
+   *  Default: 0 on every side. */
+  margin?: MarginSpec;
   /** Number of columns for `layout: 'grid'`. Children are placed row-major,
    *  so `gridColumns` implicitly determines the number of rows from the child
    *  count. Default: 1. */
@@ -284,6 +294,20 @@ export interface Padding {
 /** User-supplied padding: a uniform number, a [vertical, horizontal] tuple, or
  *  a partial per-side record (missing sides default to 0). */
 export type PaddingSpec = number | [number, number] | Partial<Padding>;
+
+/** Resolved per-side margin values (in cells). Margin is the outer counterpart
+ *  of padding — it pushes the window away from its parent's inner edges /
+ *  siblings without reserving space inside the window itself. */
+export interface Margin {
+  top:    number;
+  right:  number;
+  bottom: number;
+  left:   number;
+}
+
+/** User-supplied margin: a uniform number, a [vertical, horizontal] tuple, or
+ *  a partial per-side record (missing sides default to 0). Mirrors `PaddingSpec`. */
+export type MarginSpec = number | [number, number] | Partial<Margin>;
 
 /** Options for Window.writeText() – position defaults to (0, 0). */
 export interface WriteTextOptions {
@@ -682,6 +706,9 @@ export interface YamlWindowDef {
   /** Padding inside the border: uniform number, [vertical, horizontal] tuple,
    *  or a partial per-side record. */
   padding?: number | [number, number] | { top?: number; right?: number; bottom?: number; left?: number };
+  /** Outer spacing reserved around this window inside its parent's layout.
+   *  Same shape as `padding`. */
+  margin?: number | [number, number] | { top?: number; right?: number; bottom?: number; left?: number };
   /** Number of columns for `layout: grid`. */
   gridColumns?: number;
   /** Cross-axis alignment for `layout: row|column`. */

@@ -278,4 +278,7 @@ windows:
             type: button
             pos: flex
             size: { width: 11, height: 3 }
+            # Extra breathing room between "Cancel" and "Save" via P1-16 margin
+            # (horizontal cells reserved on top of layout gap).
+            margin: { left: 2 }
             label: " Save"

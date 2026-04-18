@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.29.0] – 2026-04-18
+
+### Added — backlog P1-16 (margin dookoła okna)
+- **`WindowProperties.margin`** — nowe pole mirrorujące `padding`
+  (shape: `number | [v, h] | Partial<{top, right, bottom, left}>`).
+  Resolver `resolveMargin` normalizuje wartość do pełnego rekordu,
+  `Window#getMargin()` zwraca snapshot.
+- **Layout integration** — `layoutAbsolute` przesuwa dziecko o
+  `(marginLeft, marginTop)` bez zmiany rozmiaru; `layoutFlex` odejmuje
+  łączne `marginMain` od dostępnej przestrzeni przed rozdzielaniem
+  slack-u przez `grow` / `shrink`, a oś poprzeczna (stretch i
+  alignItems) uwzględnia `crossMargin`; `layoutGrid` zmniejsza komórkę
+  o margin dziecka i offsetuje je o `(marginLeft, marginTop)`.
+- **InterfaceBuilder** — `def.margin` przekazywane 1:1 do
+  `WindowProperties`; YAML akceptuje ten sam shape co `padding`.
+- **Typy publiczne** — `Margin` / `MarginSpec` eksportowane z
+  `src/index.mts`.
+- **Demo + `layout.yaml`** — przycisk „Save" dostał `margin: { left: 2 }`,
+  pokazując per-dziecko odstęp poza zwykłym `gap`.
+- **Doc** — `doc/p1-16-padding-margin.md` opisuje API, algorytm
+  `layoutFlex`, backwards compatibility i różnicę między
+  `margin`/`gap`/`padding`.
+
 ## [0.28.0] – 2026-04-18
 
 ### Added — backlog P1-20 (selection w TextBox / TextArea)
