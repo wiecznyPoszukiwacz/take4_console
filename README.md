@@ -139,7 +139,7 @@ in [section 7](#7-yaml--interfacebuilder-integration).
 The repository ships a live demo that exercises every built-in control:
 
 ```bash
-git clone https://github.com/arcymag/take4-console.git
+git clone https://github.com/wiecznyPoszukiwacz/take4_console.git
 cd take4-console
 npm install
 npm run demo          # tsx src/demo.mts
