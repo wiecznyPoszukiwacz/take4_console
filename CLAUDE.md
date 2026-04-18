@@ -198,10 +198,17 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 2      | P1-18 | Focus management API                    | 0.26.0  | ✅ done (2026-04-18) |
 | 2      | P1-22 | onFocus / onBlur                        | 0.26.0  | ✅ done (2026-04-18) |
 | 2      | P1-23 | Error boundary                          | 0.26.0  | ✅ done (2026-04-18) |
+| 2      | P1-20 | Selection w TextBox / TextArea          | 0.28.0  | ✅ done (2026-04-18) |
 
 Pozostałe P1 / P2 itemy są trackowane w `doc/take4-console-backlog.md` i
 dopisane zostaną tu w miarę lądowania.
 
 **Currently working on:** Sprint 2 (P1 — fundament DX). Sprint 1 zamknięty.
 Batch 0.26.0 dostarczył `WindowManager` DX (focus API + hooki + error
-boundary) razem z z-indexem. Następny batch: do wyboru przez użytkownika.
+boundary) razem z z-indexem. 0.27.0 dołożył `VirtualCursor` (software
+caret z konfigurowalnym symbolem i miganiem) + `WindowManager.enableCursorBlink()`
+— feature spoza backlogu (doc/virtual-cursor.md). 0.28.0 zamyka P1-20:
+zaznaczenie w `TextBox` / `TextArea` (anchor + `Shift`-strzałki,
+`Ctrl+A`, kolaps przy plain arrow, zamiana selekcji przy pisaniu /
+`Backspace` / `Delete`, styl `builtin:text-selection`) —
+doc/p1-20-selection.md. Następny batch: do wyboru przez użytkownika.

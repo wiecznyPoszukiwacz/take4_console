@@ -294,4 +294,89 @@ describe('TextArea', () => {
       expect(ta.getValue()).toBe('abc');
     });
   });
+
+  describe('selection (P1-20)', () => {
+    it('defaults to no active selection', () => {
+      const ta = make({}, { value: 'hello' });
+      expect(ta.getSelection()).toBeNull();
+      expect(ta.getSelectedText()).toBe('');
+    });
+
+    it('shift+right extends selection forward on the same line', () => {
+      const ta = make({}, { value: 'abcde', cursor: { x: 1, y: 0 } });
+      ta.handleKey('shift+right');
+      ta.handleKey('shift+right');
+      expect(ta.getSelection()).toEqual({ start: { x: 1, y: 0 }, end: { x: 3, y: 0 } });
+      expect(ta.getSelectedText()).toBe('bc');
+    });
+
+    it('shift+down extends selection across lines', () => {
+      const ta = make({}, { value: 'abcd\nefgh\nijkl', cursor: { x: 2, y: 0 } });
+      ta.handleKey('shift+down');
+      expect(ta.getSelection()).toEqual({ start: { x: 2, y: 0 }, end: { x: 2, y: 1 } });
+      expect(ta.getSelectedText()).toBe('cd\nef');
+    });
+
+    it('shift+up selects backward across lines', () => {
+      const ta = make({}, { value: 'abcd\nefgh\nijkl', cursor: { x: 1, y: 2 } });
+      ta.handleKey('shift+up');
+      expect(ta.getSelection()).toEqual({ start: { x: 1, y: 1 }, end: { x: 1, y: 2 } });
+      expect(ta.getSelectedText()).toBe('fgh\ni');
+    });
+
+    it('ctrl+a selects whole buffer', () => {
+      const ta = make({}, { value: 'ab\ncd' });
+      ta.handleKey('ctrl+a');
+      expect(ta.getSelection()).toEqual({ start: { x: 0, y: 0 }, end: { x: 2, y: 1 } });
+    });
+
+    it('typing replaces cross-line selection', () => {
+      const ta = make({}, { value: 'abcd\nefgh', cursor: { x: 2, y: 0 } });
+      ta.handleKey('shift+down');
+      ta.handleKey('X');
+      expect(ta.getValue()).toBe('abXgh');
+      expect(ta.getSelection()).toBeNull();
+    });
+
+    it('backspace removes multi-line selection', () => {
+      const ta = make({}, { value: 'abcd\nefgh\nijkl', cursor: { x: 1, y: 0 } });
+      ta.handleKey('shift+down');
+      ta.handleKey('shift+down');
+      ta.handleKey('backspace');
+      expect(ta.getValue()).toBe('ajkl');
+    });
+
+    it('plain left collapses selection to start', () => {
+      const ta = make({}, { value: 'abcde', cursor: { x: 1, y: 0 } });
+      ta.handleKey('shift+right');
+      ta.handleKey('shift+right');
+      ta.handleKey('left');
+      expect(ta.getSelection()).toBeNull();
+      expect(ta.getCursor()).toEqual({ x: 1, y: 0 });
+    });
+
+    it('enter replaces selection with newline', () => {
+      const ta = make({}, { value: 'abcde', cursor: { x: 1, y: 0 } });
+      ta.handleKey('shift+right');
+      ta.handleKey('shift+right');
+      ta.handleKey('enter');
+      expect(ta.getValue()).toBe('a\nde');
+    });
+
+    it('selectAll / clearSelection helpers', () => {
+      const ta = make({}, { value: 'ab' });
+      ta.selectAll();
+      expect(ta.getSelection()).toEqual({ start: { x: 0, y: 0 }, end: { x: 2, y: 0 } });
+      ta.clearSelection();
+      expect(ta.getSelection()).toBeNull();
+    });
+
+    it('selection renders with merged selection style', () => {
+      const ta = new TextArea({ pos: new Pos(0, 0), size: new Size(12, 6), focused: true }, { value: 'abcdef' });
+      ta.setSelection({ x: 1, y: 0 }, { x: 3, y: 0 });
+      ta.render();
+      expect(ta.getCell(2, 1).attributes.background).not.toBeUndefined();
+      expect(ta.getCell(3, 1).attributes.background).not.toBeUndefined();
+    });
+  });
 });

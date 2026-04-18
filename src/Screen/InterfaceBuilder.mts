@@ -293,11 +293,13 @@ export class InterfaceBuilder {
         const tbSubmit    = def.onSubmit  ? this.callbacks.get(def.onSubmit)  : undefined;
         const tbKeyDown   = def.onKeyDown ? this.callbacks.get(def.onKeyDown) : undefined;
         const tb = new TextBox(wp, {
-          value:       def.value,
-          placeholder: def.placeholder,
-          onChange:    tbChange  as ((value: string) => void)                 | undefined,
-          onSubmit:    tbSubmit  as ((value: string) => void)                 | undefined,
-          onKeyDown:   tbKeyDown as ((key: string) => boolean | void)         | undefined,
+          value:        def.value,
+          placeholder:  def.placeholder,
+          onChange:     tbChange  as ((value: string) => void)                 | undefined,
+          onSubmit:     tbSubmit  as ((value: string) => void)                 | undefined,
+          onKeyDown:    tbKeyDown as ((key: string) => boolean | void)         | undefined,
+          cursorSymbol: def.cursorSymbol,
+          cursorBlink:  def.cursorBlink,
         });
         pending.push({ control: tb, parents: [...parentChain] });
         win = tb;
@@ -317,6 +319,8 @@ export class InterfaceBuilder {
           onKeyDown:           taKeyDown as ((key: string) => boolean | void) | undefined,
           insertTabAsSpaces:   def.insertTabAsSpaces,
           ctrlDDeletesForward: def.ctrlDDeletesForward,
+          cursorSymbol:        def.cursorSymbol,
+          cursorBlink:         def.cursorBlink,
         });
         pending.push({ control: ta, parents: [...parentChain] });
         win = ta;

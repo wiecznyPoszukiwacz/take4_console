@@ -15,6 +15,7 @@ export { Window }         from './Screen/Window.mjs';
 export { Region }         from './Screen/Region.mjs';
 export { StyleRegistry }  from './Screen/StyleRegistry.mjs';
 export { WindowManager }  from './Screen/WindowManager.mjs';
+export { VirtualCursor, DEFAULT_CURSOR_SYMBOL } from './Screen/VirtualCursor.mjs';
 
 // ── Geometry ──────────────────────────────────────────────────────────────────
 export { Pos }                            from './Screen/Pos.mjs';
@@ -58,6 +59,7 @@ export {
 	BUILTIN_TEXT_PLACEHOLDER,
 	BUILTIN_TEXT_CHECKED,
 	BUILTIN_CURSOR,
+	BUILTIN_TEXT_SELECTION,
 } from './Screen/types.mjs';
 
 // ── Public type exports ───────────────────────────────────────────────────────
@@ -111,6 +113,10 @@ export type {
 	Focusable,
 	TerminalMouseEvent,
 	WindowManagerOptions,
+
+	// Virtual cursor
+	CursorBlink,
+	VirtualCursorOptions,
 
 	// InterfaceBuilder YAML schema
 	YamlAxisValue,

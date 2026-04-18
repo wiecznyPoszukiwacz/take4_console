@@ -149,6 +149,31 @@ describe('TextBox', () => {
       expect(tb.getCell(1, 1).attributes.inverse).toBeUndefined();
     });
 
+    it('renders custom cursor symbol instead of inverse block', () => {
+      const tb = new TextBox(
+        { pos: new Pos(0, 0), size: new Size(12, 3), focused: true },
+        { value: 'abc', cursor: 1, cursorSymbol: '|' },
+      );
+      tb.render();
+      expect(tb.getCell(2, 1).char).toBe('|');
+      expect(tb.getCell(2, 1).attributes.inverse).toBeUndefined();
+    });
+
+    it('cursor hidden when blink mode is off', () => {
+      const tb = new TextBox(
+        { pos: new Pos(0, 0), size: new Size(12, 3), focused: true },
+        { value: 'abc', cursor: 0, cursorBlink: { mode: 'off' } },
+      );
+      tb.render();
+      expect(tb.getCell(1, 1).attributes.inverse).toBeUndefined();
+      expect(tb.getCell(1, 1).char).toBe('a');
+    });
+
+    it('exposes VirtualCursor via getVirtualCursor()', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3) }, { cursorSymbol: '_' });
+      expect(tb.getVirtualCursor().getSymbol()).toBe('_');
+    });
+
     it('scrolls so cursor stays visible', () => {
       // inner width = 10; type 12 chars
       const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3), focused: true });
@@ -254,6 +279,126 @@ describe('TextBox', () => {
       });
       tb.handleKey('a');
       expect(tb.getValue()).toBe('a');
+    });
+  });
+
+  describe('selection (P1-20)', () => {
+    it('defaults to no active selection', () => {
+      const tb = make({}, { value: 'hello' });
+      expect(tb.getSelection()).toBeNull();
+      expect(tb.getSelectedText()).toBe('');
+    });
+
+    it('shift+right extends selection forward', () => {
+      const tb = make({}, { value: 'hello', cursor: 1 });
+      tb.handleKey('shift+right');
+      tb.handleKey('shift+right');
+      expect(tb.getSelection()).toEqual({ start: 1, end: 3 });
+      expect(tb.getSelectedText()).toBe('el');
+      expect(tb.getCursor()).toBe(3);
+    });
+
+    it('shift+left extends selection backward', () => {
+      const tb = make({}, { value: 'hello', cursor: 4 });
+      tb.handleKey('shift+left');
+      tb.handleKey('shift+left');
+      expect(tb.getSelection()).toEqual({ start: 2, end: 4 });
+      expect(tb.getCursor()).toBe(2);
+    });
+
+    it('shift+home selects from cursor to start', () => {
+      const tb = make({}, { value: 'hello', cursor: 3 });
+      tb.handleKey('shift+home');
+      expect(tb.getSelection()).toEqual({ start: 0, end: 3 });
+    });
+
+    it('shift+end selects from cursor to end', () => {
+      const tb = make({}, { value: 'hello', cursor: 2 });
+      tb.handleKey('shift+end');
+      expect(tb.getSelection()).toEqual({ start: 2, end: 5 });
+    });
+
+    it('ctrl+a selects entire value', () => {
+      const tb = make({}, { value: 'hello', cursor: 2 });
+      tb.handleKey('ctrl+a');
+      expect(tb.getSelection()).toEqual({ start: 0, end: 5 });
+    });
+
+    it('plain left collapses selection to its start', () => {
+      const tb = make({}, { value: 'hello', cursor: 1 });
+      tb.handleKey('shift+right');
+      tb.handleKey('shift+right');
+      tb.handleKey('left');
+      expect(tb.getSelection()).toBeNull();
+      expect(tb.getCursor()).toBe(1);
+    });
+
+    it('plain right collapses selection to its end', () => {
+      const tb = make({}, { value: 'hello', cursor: 1 });
+      tb.handleKey('shift+right');
+      tb.handleKey('shift+right');
+      tb.handleKey('right');
+      expect(tb.getSelection()).toBeNull();
+      expect(tb.getCursor()).toBe(3);
+    });
+
+    it('typing replaces selection', () => {
+      const tb = make({}, { value: 'hello', cursor: 1 });
+      tb.handleKey('shift+right');
+      tb.handleKey('shift+right');
+      tb.handleKey('X');
+      expect(tb.getValue()).toBe('hXlo');
+      expect(tb.getSelection()).toBeNull();
+      expect(tb.getCursor()).toBe(2);
+    });
+
+    it('backspace removes selection regardless of direction', () => {
+      const tb = make({}, { value: 'hello', cursor: 4 });
+      tb.handleKey('shift+left');
+      tb.handleKey('shift+left');
+      tb.handleKey('backspace');
+      expect(tb.getValue()).toBe('heo');
+      expect(tb.getSelection()).toBeNull();
+      expect(tb.getCursor()).toBe(2);
+    });
+
+    it('delete removes selection', () => {
+      const tb = make({}, { value: 'hello', cursor: 1 });
+      tb.handleKey('shift+right');
+      tb.handleKey('shift+right');
+      tb.handleKey('delete');
+      expect(tb.getValue()).toBe('hlo');
+    });
+
+    it('setSelection + getSelection round-trip', () => {
+      const tb = make({}, { value: 'abcdef' });
+      tb.setSelection(1, 4);
+      expect(tb.getSelection()).toEqual({ start: 1, end: 4 });
+      expect(tb.getCursor()).toBe(4);
+    });
+
+    it('selectAll / clearSelection', () => {
+      const tb = make({}, { value: 'abc' });
+      tb.selectAll();
+      expect(tb.getSelection()).toEqual({ start: 0, end: 3 });
+      tb.clearSelection();
+      expect(tb.getSelection()).toBeNull();
+    });
+
+    it('setValue clears selection', () => {
+      const tb = make({}, { value: 'abc' });
+      tb.selectAll();
+      tb.setValue('xy');
+      expect(tb.getSelection()).toBeNull();
+    });
+
+    it('selection renders with merged selection style', () => {
+      const tb = new TextBox({ pos: new Pos(0, 0), size: new Size(12, 3), focused: true }, { value: 'abcde' });
+      tb.setSelection(1, 3);
+      tb.render();
+      // Inner area starts at (1, 1); selected characters b, c occupy cols 2, 3.
+      expect(tb.getCell(2, 1).attributes.background).not.toBeUndefined();
+      expect(tb.getCell(3, 1).attributes.background).not.toBeUndefined();
     });
   });
 });

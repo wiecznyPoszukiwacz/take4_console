@@ -222,6 +222,12 @@ export class WindowManager {
 	/** Set by pause() when it showed a previously-hidden cursor — instructs
 	 *  resume() to hide it again. Cleared after resume() or stop() uses it. */
 	private pauseRestoreCursorHidden: boolean = false;
+	/** Active setInterval handle for cursor blink ticks, or null when
+	 *  cursor blinking is disabled (the default). */
+	private blinkTimer: ReturnType<typeof setInterval> | null = null;
+	/** Interval (ms) requested by the last `enableCursorBlink()` call.
+	 *  Kept so resume() can reinstall the timer with the same cadence. */
+	private blinkIntervalMs: number | null = null;
 
 	/** Creates a WindowManager for the given Screen.
 	 *  Does not start the input loop; call run() to begin. */
@@ -505,6 +511,8 @@ export class WindowManager {
 		this.running     = false;
 		this.paused      = false;
 
+		this.uninstallBlinkTimer();
+
 		if (wasRunning) {
 			if (!wasPaused) {
 				process.stdin.off('data', this.boundHandleInput);
@@ -570,6 +578,10 @@ export class WindowManager {
 			this.screen.showHardwareCursor();
 		}
 
+		// Stop the blink timer so a spawned sub-process doesn't get its
+		// screen overwritten mid-frame. resume() reinstalls it.
+		this.uninstallBlinkTimer();
+
 		this.pauseRestoreAltScreen = false;
 		if (options?.leaveAltScreen && this.screen.isAltScreenActive()) {
 			this.screen.exitAltScreen();
@@ -606,6 +618,9 @@ export class WindowManager {
 		process.stdin.resume();
 		process.stdin.on('data', this.boundHandleInput);
 
+		// Restore the blink timer with its previously configured cadence.
+		this.installBlinkTimer();
+
 		if (options?.rerender !== false) {
 			this.renderFrame();
 		}
@@ -616,6 +631,56 @@ export class WindowManager {
 	 *  registrations, dialog stack, exit keys) intact. */
 	public isPaused(): boolean {
 		return this.paused;
+	}
+
+	// ── Cursor blink ───────────────────────────────────────────────────────────
+
+	/** Starts a timer that periodically triggers a re-render so timed-blink
+	 *  `VirtualCursor` instances (used by focused `TextBox` / `TextArea`)
+	 *  actually animate in the terminal. Call once after `run()`; the timer
+	 *  automatically pauses during `pause()` and re-arms on `resume()`.
+	 *
+	 *  The `intervalMs` parameter sets how often the timer fires — smaller
+	 *  values are smoother but render more frames per second. Default:
+	 *  `80` ms (≈12 Hz), enough to capture the `fast` preset (250/250) and
+	 *  the short phases of `irregular` without flooding stdout.
+	 *
+	 *  Idempotent: calling again with a new interval replaces the existing
+	 *  timer. */
+	public enableCursorBlink(intervalMs: number = 80): void {
+		this.blinkIntervalMs = Math.max(16, intervalMs);
+		this.installBlinkTimer();
+	}
+
+	/** Stops the blink timer installed by `enableCursorBlink()`. Idempotent. */
+	public disableCursorBlink(): void {
+		this.blinkIntervalMs = null;
+		this.uninstallBlinkTimer();
+	}
+
+	/** (Re)creates the blink interval using the cached `blinkIntervalMs`. */
+	private installBlinkTimer(): void {
+		this.uninstallBlinkTimer();
+		if (this.blinkIntervalMs === null) return;
+		this.blinkTimer = setInterval(() => {
+			// Avoid drawing while paused — the stdin listener is detached
+			// and the terminal might be owned by a sub-process.
+			if (this.paused) return;
+			this.renderFrame();
+		}, this.blinkIntervalMs);
+		// Don't keep the Node event loop alive just for cursor blinks.
+		if (typeof this.blinkTimer === 'object' && this.blinkTimer !== null
+		    && 'unref' in this.blinkTimer && typeof this.blinkTimer.unref === 'function') {
+			this.blinkTimer.unref();
+		}
+	}
+
+	/** Clears the active blink interval, if any. */
+	private uninstallBlinkTimer(): void {
+		if (this.blinkTimer !== null) {
+			clearInterval(this.blinkTimer);
+			this.blinkTimer = null;
+		}
 	}
 
 	// ── Input handling ─────────────────────────────────────────────────────────

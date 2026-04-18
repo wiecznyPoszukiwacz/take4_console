@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.28.0] – 2026-04-18
+
+### Added — backlog P1-20 (selection w TextBox / TextArea)
+- **`TextBox` / `TextArea`** — model zaznaczenia oparty na kotwicy
+  (`selectionAnchor`) i pozycji kursora. Publiczne API:
+  `getSelection()` / `getSelectedText()` / `setSelection(anchor, cursor)` /
+  `selectAll()` / `clearSelection()`. `setValue()` i `setCursor()`
+  czyszczą zaznaczenie, by nie mapować nieaktualnej kotwicy na nowy
+  bufor.
+- **Klawisze selekcji (`handleKey`)** — `shift+left` / `shift+right` /
+  `shift+home` / `shift+end` rozszerzają selekcję w TextBox; `TextArea`
+  dokłada `shift+up` / `shift+down`. `ctrl+a` zaznacza całą zawartość.
+  Obsługiwane są zarówno aliasy tekstowe (`shift+left`) jak i surowe
+  sekwencje xterm (`\x1b[1;2D`, `\x1b[1;2C`, `\x1b[1;2A`, `\x1b[1;2B`,
+  `\x1b[1;2H`, `\x1b[1;2F`, `\x01`).
+- **Zachowanie bez shift przy aktywnej selekcji** — `left` kolapsuje do
+  początku, `right` do końca; `home` / `end` / `up` / `down` po prostu
+  czyszczą kotwicę przed ruchem. Wstawienie znaku, `backspace`, `delete`,
+  `enter` oraz soft-tab / `ctrl+d` (w `TextArea`) najpierw usuwają
+  zaznaczony fragment, potem wykonują swoją zwykłą operację.
+- **`BUILTIN_TEXT_SELECTION`** — nowy nazwany styl (tło `24`, tekst
+  `231`) pre-rejestrowany w `StyleRegistry`; kontrolki mergują go na
+  cele w obrębie selekcji, więc podświetlenie zostaje skomponowane
+  z aktualnym stylem tekstu. Nadpisywalny przez
+  `Screen#overrideStyle('builtin:text-selection', …)`.
+- **Demo + `layout.yaml`** — wartości początkowe TextBox/TextArea
+  zostawiają selekcję pustą; nowy skrót `/p1-20-selection.md` opisuje
+  API i algorytm, pełna ściana na froncie wymaga tylko Ctrl+A / Shift +
+  strzałki w trakcie działającego demo.
+
+## [0.27.0] – 2026-04-18
+
+### Added — virtual cursor (software caret z kontrolą migania i symbolu)
+- **`VirtualCursor`** (`src/Screen/VirtualCursor.mts`) — model software-owego
+  kursora: glif + harmonogram migania. Tryby `off` / `steady` / `slow`
+  (600 ms on / 600 ms off) / `fast` (250 ms / 250 ms) / `irregular`
+  (losowe fazy 180–520 ms on, 90–240 ms off) / `custom { onMs, offMs }`.
+  API: `isVisible(now?)`, `getSymbol()`, `hasCustomSymbol()`,
+  `setSymbol(undefined)` (powrót do inverse-block), `setBlink()`,
+  `resetPhase(now?)` (utrzymuje kursor widoczny podczas pisania),
+  `getTickHintMs()` (dla WM przy wyborze kadencji timera).
+- **`TextBoxProperties.cursorSymbol` / `cursorBlink`** — konfiguracja na
+  poziomie konstruktora; `TextBox#getVirtualCursor()` eksponuje model do
+  zmian runtime. Gdy `cursorSymbol` nie jest podany, kontrolka zachowuje
+  legacy wygląd (inverse-block nad znakiem pod kursorem) → pełna
+  kompatybilność wsteczna.
+- **`TextAreaProperties.cursorSymbol` / `cursorBlink`** + `getVirtualCursor()`
+  — analogicznie dla wieloliniowej kontrolki. `handleKey()` w obu
+  kontrolkach woła `resetPhase()`, żeby miganie nie chowało kursora
+  w trakcie wpisywania.
+- **`WindowManager#enableCursorBlink(intervalMs = 80)` /
+  `disableCursorBlink()`** — periodyczny rerender niezbędny, by
+  migotanie faktycznie trafiało na terminal. Timer jest `unref()`owany
+  (nie blokuje event-loop), automatycznie zdejmowany w `pause()` i
+  przywracany w `resume()`, sprzątany w `stop()`.
+- **InterfaceBuilder (`textbox`, `textarea`)** — rozpoznaje pola
+  `cursorSymbol:` i `cursorBlink:` w YAML, przekazuje je do
+  konstruktorów kontrolek.
+- **Export** — `VirtualCursor`, `DEFAULT_CURSOR_SYMBOL`, typy `CursorBlink`
+  i `VirtualCursorOptions` w publicznym barrelu `take4-console`.
+
+### Demo
+- `layout.yaml` — `tbEmail` używa `cursorSymbol: "▎"` + `cursorBlink: slow`.
+- `demo.mts` — `tbUsername` zostaje przełączony w trybie `irregular`
+  z symbolem `▏`; `wm.enableCursorBlink(80)` uruchamia timer.
+
+### Tests
+- 14 nowych testów w `tests/VirtualCursor.test.mts` (domyślne wartości,
+  wszystkie tryby migania, `resetPhase`, `setBlink`, `getTickHintMs`).
+- Uzupełnione testy `TextBox` — custom symbol, `cursorBlink: off`,
+  `getVirtualCursor()`.
+- Nowy test w `WindowManager` — `enableCursorBlink` / `disableCursorBlink`
+  uruchamia i zatrzymuje cykliczne renderowanie.
+
 ## [0.26.0] – 2026-04-18
 
 ### Added — backlog P1-17 (z-index / non-modal stacking)

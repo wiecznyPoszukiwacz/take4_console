@@ -28,6 +28,36 @@ export const BUILTIN_TEXT_PLACEHOLDER   = 'builtin:text-placeholder';
 export const BUILTIN_TEXT_CHECKED       = 'builtin:text-checked';
 /** Name of the cursor highlight style (inverse) used by text input controls. */
 export const BUILTIN_CURSOR             = 'builtin:cursor';
+/** Name of the selection highlight style merged over selected cells in
+ *  `TextBox` / `TextArea` (backlog P1-20). */
+export const BUILTIN_TEXT_SELECTION     = 'builtin:text-selection';
+
+// ── Virtual cursor ────────────────────────────────────────────────────────────
+
+/** Blink configuration for a `VirtualCursor`.
+ *  - `off`       — cursor is never drawn (hide software cursor entirely).
+ *  - `steady`    — cursor is always drawn (no blink).
+ *  - `slow`      — 600 ms on / 600 ms off.
+ *  - `fast`      — 250 ms on / 250 ms off.
+ *  - `irregular` — each on/off phase picks a randomised duration so the
+ *                  cursor pulses in a non-metronomic "alive" rhythm.
+ *  - `custom`    — caller-supplied on / off durations in milliseconds. */
+export type CursorBlink =
+  | { mode: 'off' }
+  | { mode: 'steady' }
+  | { mode: 'slow' }
+  | { mode: 'fast' }
+  | { mode: 'irregular' }
+  | { mode: 'custom'; onMs: number; offMs: number };
+
+/** Construction options for `VirtualCursor`. Both fields are optional;
+ *  defaults: `symbol = '▎'`, `blink = { mode: 'steady' }`. */
+export interface VirtualCursorOptions {
+  /** Glyph rendered for the cursor when visible. Default: `'▎'`. */
+  symbol?: string;
+  /** Blink schedule. Default: `{ mode: 'steady' }` (no blink). */
+  blink?: CursorBlink;
+}
 
 /** Integer handle returned by StyleRegistry.register(). ID 0 always means no style (empty {}). */
 export type StyleId = number;
@@ -313,6 +343,15 @@ export interface TextBoxProperties {
    *  `true` to mark the key as handled — the default behaviour (inserting,
    *  moving cursor, deleting, …) is then skipped. */
   onKeyDown?: (key: string) => boolean | void;
+  /** Virtual-cursor glyph. Overrides the default inverse-block look. When
+   *  set, the character under the cursor is replaced by this symbol (unless
+   *  the symbol is a zero-width string, in which case the underlying
+   *  character stays). Default: undefined (inverse block). */
+  cursorSymbol?: string;
+  /** Blink schedule for the virtual cursor. Default: `{ mode: 'steady' }`
+   *  (no blink). Requires `WindowManager.enableCursorBlink()` for timed
+   *  modes to actually animate. */
+  cursorBlink?: CursorBlink;
 }
 
 /** Control-specific properties for the TextArea control. */
@@ -339,6 +378,10 @@ export interface TextAreaProperties {
   /** When true, Ctrl+D deletes the character to the right of the cursor
    *  (or joins with the next line at end of line). Default: false. */
   ctrlDDeletesForward?: boolean;
+  /** Virtual-cursor glyph. Overrides the default inverse-block look. */
+  cursorSymbol?: string;
+  /** Blink schedule for the virtual cursor. Default: `{ mode: 'steady' }`. */
+  cursorBlink?: CursorBlink;
 }
 
 /** Control-specific properties for the Checkbox control. */
@@ -590,6 +633,10 @@ export interface YamlWindowDef {
   insertTabAsSpaces?: number;
   /** TextArea: when true, Ctrl+D deletes the character to the right of the cursor. */
   ctrlDDeletesForward?: boolean;
+  /** TextBox / TextArea: virtual-cursor glyph (overrides inverse-block look). */
+  cursorSymbol?: string;
+  /** TextBox / TextArea: virtual-cursor blink schedule. */
+  cursorBlink?: CursorBlink;
   /** LED state ('ok' | 'warn' | 'error' | 'off') — used by statusled. */
   state?: 'ok' | 'warn' | 'error' | 'off';
   /** Whether to show a percentage label over a progress bar. Default: true. */

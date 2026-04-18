@@ -13,6 +13,7 @@ import { Spinner }      from './Screen/controls/Spinner.mjs';
 import { Sparkline }    from './Screen/controls/Sparkline.mjs';
 import { ListBox }      from './Screen/controls/ListBox.mjs';
 import { Tabs }         from './Screen/controls/Tabs.mjs';
+import { TextBox }      from './Screen/controls/TextBox.mjs';
 import { Window } from './Screen/Window.mjs';
 import type { ListBoxRowSegments, WindowProperties, StyleId } from './Screen/types.mjs';
 
@@ -411,6 +412,24 @@ const main = async (): Promise<void> => {
 		wm.resume();
 		return true;
 	});
+
+	// Virtual cursor: animated caret in TextBox/TextArea. The `tbEmail`
+	// TextBox opts into slow blink via layout.yaml; here we flip the
+	// `tbUsername` TextBox into the `irregular` mode so the two
+	// side-by-side inputs show off two different rhythms. The
+	// `enableCursorBlink()` call boots the periodic rerender that makes
+	// the blink phases actually reach the terminal.
+	const tbUsername = result.get('tbUsername') as TextBox | undefined;
+	if (tbUsername) {
+		tbUsername.getVirtualCursor().setSymbol('▏');
+		tbUsername.getVirtualCursor().setBlink({ mode: 'irregular' });
+		// P1-20 showcase: pre-select the initial value so the merged
+		// selection style is visible on boot. Shift+Left/Right, Ctrl+A,
+		// and plain arrows collapse it the moment the user interacts.
+		const text = tbUsername.getValue();
+		if (text.length > 0) tbUsername.setSelection(0, Math.min(3, text.length));
+	}
+	wm.enableCursorBlink(80);
 
 	wm.run();
 };

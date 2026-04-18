@@ -968,6 +968,26 @@ describe('WindowManager', () => {
 			}
 		});
 
+		it('cursor blink timer fires renders and stops on disable', async () => {
+			const s = makeScreen();
+			const m = new WindowManager(s);
+			const renderSpy = vi.spyOn(s, 'render').mockImplementation(() => {});
+			try {
+				m.enableCursorBlink(16);
+				await new Promise(r => setTimeout(r, 60));
+				const after = renderSpy.mock.calls.length;
+				expect(after).toBeGreaterThanOrEqual(1);
+				m.disableCursorBlink();
+				const baseline = renderSpy.mock.calls.length;
+				await new Promise(r => setTimeout(r, 40));
+				expect(renderSpy.mock.calls.length).toBe(baseline);
+			} finally {
+				renderSpy.mockRestore();
+				m.stop();
+				s.dispose();
+			}
+		});
+
 		it('rethrows after the manager stops (handler is cleared)', () => {
 			class Boom extends Window {
 				public override render(): void { throw new Error('post-stop'); }
