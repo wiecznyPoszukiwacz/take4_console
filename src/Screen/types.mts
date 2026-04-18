@@ -152,19 +152,92 @@ export interface WindowProperties {
   disabled?: boolean;
   /** Text label displayed by the control. Default: ''. */
   label?: string;
+  /** Layout algorithm applied to the direct children of this window. Default:
+   *  'absolute' (pre-0.24 behaviour — each child is positioned by its Pos/Size).
+   *  Setting this to 'row', 'column', or 'grid' enables flex-style auto-layout:
+   *  the engine distributes the inner area, honours `gap` / `padding` /
+   *  `alignItems` / `justifyContent`, and grows children with `Size.flex(...)`
+   *  to fill remaining space. */
+  layout?: LayoutMode;
+  /** Spacing (in cells) inserted between adjacent children when `layout` is
+   *  'row', 'column', or 'grid'. Ignored by 'absolute' layout. Default: 0. */
+  gap?: number;
+  /** Extra inset applied inside the border — children are laid out within the
+   *  padded inner area, and `getInnerSize()` / `getInnerOffset()` reflect the
+   *  padding as well as the border. Default: 0 on every side. */
+  padding?: PaddingSpec;
+  /** Number of columns for `layout: 'grid'`. Children are placed row-major,
+   *  so `gridColumns` implicitly determines the number of rows from the child
+   *  count. Default: 1. */
+  gridColumns?: number;
+  /** Cross-axis alignment for `layout: 'row'` or `layout: 'column'`.
+   *  Default: 'stretch' (children are stretched to fill the cross axis). */
+  alignItems?: AlignItems;
+  /** Main-axis distribution of leftover space for `layout: 'row'` / `'column'`
+   *  when no child consumes it via flex-grow. Default: 'start'. */
+  justifyContent?: JustifyContent;
 }
 
-/** Internal per-axis position spec used by Pos. */
+/** Internal per-axis position spec used by Pos.
+ *  - 'start' / 'end' / 'pct' / 'center' are resolved against the parent's
+ *    inner area by the regular absolute-layout path.
+ *  - 'flex' marks the child as belonging to a flex layout slot; the final
+ *    (x, y) is computed by the parent's layout engine (see `WindowProperties.layout`).
+ *    The `order` field lets users reorder flex children without changing the
+ *    addChild() insertion order. */
 export type AxisSpec =
   | { mode: 'start'; value: number }
   | { mode: 'end';   value: number }
   | { mode: 'pct';   value: number }
-  | { mode: 'center' };
+  | { mode: 'center' }
+  | { mode: 'flex';  order: number };
 
-/** Internal per-axis size spec used by Size. */
+/** Basis value stored inside `{ mode: 'flex' }` DimSpec entries. Supports
+ *  absolute pixel values and parent-relative percentages. */
+export type FlexBasis =
+  | { kind: 'abs'; value: number }
+  | { kind: 'pct'; value: number };
+
+/** Internal per-axis size spec used by Size.
+ *  - 'abs' / 'pct' mirror the pre-flex behaviour (fixed pixels or % of parent).
+ *  - 'flex' marks the child as a flex item; the parent's layout engine
+ *    distributes the inner area in proportion to `grow` and shrinks in
+ *    proportion to `shrink` when space is tight. `basis` is the starting
+ *    main-axis size before distribution (default `{ kind: 'abs', value: 0 }`).
+ *  - 'content' marks the child as auto-sized; the layout engine measures the
+ *    child's natural size (its current Region dimensions) and uses that. */
 export type DimSpec =
-  | { mode: 'abs'; value: number }
-  | { mode: 'pct'; value: number };
+  | { mode: 'abs';     value: number }
+  | { mode: 'pct';     value: number }
+  | { mode: 'flex';    grow: number; shrink: number; basis: FlexBasis }
+  | { mode: 'content' };
+
+/** Layout algorithm applied to a window's direct children.
+ *  - 'absolute' (default): each child is positioned/sized via its own Pos/Size,
+ *    matching the pre-0.24 behaviour — existing layouts continue to work unchanged.
+ *  - 'row'     : children flow horizontally; main axis = width, cross axis = height.
+ *  - 'column'  : children flow vertically;   main axis = height, cross axis = width.
+ *  - 'grid'    : children are placed in a uniform N-column grid (see `gridColumns`). */
+export type LayoutMode = 'absolute' | 'row' | 'column' | 'grid';
+
+/** Cross-axis alignment for flex layouts (row/column). Default: 'stretch'. */
+export type AlignItems = 'start' | 'center' | 'end' | 'stretch';
+
+/** Main-axis distribution of leftover space when no flex-grow child consumes it.
+ *  Default: 'start'. */
+export type JustifyContent = 'start' | 'center' | 'end' | 'space-between' | 'space-around';
+
+/** Resolved per-side padding values (in cells). */
+export interface Padding {
+  top:    number;
+  right:  number;
+  bottom: number;
+  left:   number;
+}
+
+/** User-supplied padding: a uniform number, a [vertical, horizontal] tuple, or
+ *  a partial per-side record (missing sides default to 0). */
+export type PaddingSpec = number | [number, number] | Partial<Padding>;
 
 /** Options for Window.writeText() – position defaults to (0, 0). */
 export interface WriteTextOptions {
@@ -410,21 +483,38 @@ export interface BarChartProperties {
 /** A single axis value: absolute number, edge-relative negative, or percentage string ("N%"). */
 export type YamlAxisValue = number | string;
 
-/** YAML position specification for a window. */
+/** YAML position specification for a window.
+ *  - Shorthand strings ('center', 'topLeft', …, 'flex') map to the matching
+ *    `Pos` static factory with no arguments.
+ *  - `{ preset, offset? }` maps to `Pos.top/left/right/bottom(offset)`.
+ *  - `{ flex: N }` is shorthand for `Pos.flex(N)` so authors can set a layout
+ *    order from YAML.
+ *  - `{ x, y }` defers to the two-argument `new Pos(x, y)` constructor. */
 export type YamlPosSpec =
-  | 'center' | 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'
+  | 'center' | 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | 'flex'
   | { preset: 'top';    offset?: YamlAxisValue }
   | { preset: 'left';   offset?: YamlAxisValue }
   | { preset: 'right';  offset?: YamlAxisValue }
   | { preset: 'bottom'; offset?: YamlAxisValue }
+  | { flex: number }
   | { x: YamlAxisValue; y: YamlAxisValue };
 
-/** YAML size specification for a window. */
+/** YAML size specification for a window.
+ *  - `'fill'`, `'flex'`, `'content'` map to the matching zero-arg
+ *    `Size.fill()` / `Size.flex()` / `Size.content()` factories.
+ *  - `{ fillWidth }` / `{ fillHeight }` mirror the pre-0.24 shorthands.
+ *  - `{ flex: { grow?, shrink?, basis? } }` builds `Size.flex(grow, shrink, basis)`.
+ *  - `{ width, height }` maps to `new Size(width, height)`; the axis values may
+ *    themselves be literal numbers, "N%" strings, `'flex'`/`'content'` strings,
+ *    or `{ flex: {...} }` / `{ content: true }` objects for per-axis control. */
+export type YamlDimValue = YamlAxisValue | 'flex' | 'content' | { flex: { grow?: number; shrink?: number; basis?: YamlAxisValue } } | { content: true };
+
 export type YamlSizeSpec =
-  | 'fill'
+  | 'fill' | 'flex' | 'content'
   | { fillWidth: YamlAxisValue }
   | { fillHeight: YamlAxisValue }
-  | { width: YamlAxisValue; height: YamlAxisValue };
+  | { flex: { grow?: number; shrink?: number; basis?: YamlAxisValue } }
+  | { width: YamlDimValue; height: YamlDimValue };
 
 /** Control type tags supported by InterfaceBuilder. */
 export type YamlWindowType = 'window' | 'button' | 'textbox' | 'textarea' | 'checkbox' | 'radio'
@@ -521,6 +611,19 @@ export interface YamlWindowDef {
   running?: boolean;
   /** Tab index this child belongs to when its parent is a Tabs control. */
   tab?: number;
+  /** Layout algorithm for direct children — 'absolute' / 'row' / 'column' / 'grid'. */
+  layout?: 'absolute' | 'row' | 'column' | 'grid';
+  /** Spacing (in cells) between adjacent children for flex / grid layouts. */
+  gap?: number;
+  /** Padding inside the border: uniform number, [vertical, horizontal] tuple,
+   *  or a partial per-side record. */
+  padding?: number | [number, number] | { top?: number; right?: number; bottom?: number; left?: number };
+  /** Number of columns for `layout: grid`. */
+  gridColumns?: number;
+  /** Cross-axis alignment for `layout: row|column`. */
+  alignItems?: 'start' | 'center' | 'end' | 'stretch';
+  /** Main-axis distribution of leftover space for `layout: row|column`. */
+  justifyContent?: 'start' | 'center' | 'end' | 'space-between' | 'space-around';
 }
 
 /** Top-level YAML layout document consumed by InterfaceBuilder. */

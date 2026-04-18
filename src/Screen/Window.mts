@@ -1,4 +1,4 @@
-import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize, LayoutMode, AlignItems, JustifyContent, Padding, PaddingSpec, DimSpec } from './types.mjs';
 import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
@@ -29,6 +29,51 @@ const resolveBorder = (border: WindowBorder | boolean | undefined): WindowBorder
 	if (!border) return false;
 	if (border === true) return { top: true, right: true, bottom: true, left: true };
 	return border;
+};
+
+/** Internal per-child bookkeeping during a row/column flex layout pass. */
+interface FlexItem {
+	child:     Window;
+	mainSpec:  DimSpec;
+	crossSpec: DimSpec;
+	mainSize:  number;
+	crossSize: number;
+}
+
+/** Resolves a flex-item's initial main- or cross-axis size from its DimSpec.
+ *  - 'abs'     → the literal pixel value.
+ *  - 'pct'     → the computed fraction of the parent's inner dimension.
+ *  - 'flex'    → the basis (abs or pct of parent) before grow/shrink distribution.
+ *  - 'content' → the child's natural size (its current Region dimension on the
+ *                requested axis), which defaults to 1 for an uninitialised child.
+ *  `naturalSize` must come from the child's current getSize() on the relevant
+ *  axis so content-sized children pick up the most up-to-date measurement. */
+function resolveFlexBasis(spec: DimSpec, parent: number, naturalSize: number): number {
+	switch (spec.mode) {
+		case 'abs':     return spec.value;
+		case 'pct':     return Math.floor(parent * spec.value / 100);
+		case 'content': return naturalSize;
+		case 'flex':
+			return spec.basis.kind === 'pct'
+				? Math.floor(parent * spec.basis.value / 100)
+				: spec.basis.value;
+	}
+}
+
+/** Normalises a PaddingSpec to a full Padding record (missing sides → 0). */
+const resolvePadding = (spec: PaddingSpec | undefined): Padding => {
+	if (spec === undefined) return { top: 0, right: 0, bottom: 0, left: 0 };
+	if (typeof spec === 'number') return { top: spec, right: spec, bottom: spec, left: spec };
+	if (Array.isArray(spec)) {
+		const [v = 0, h = 0] = spec;
+		return { top: v, right: h, bottom: v, left: h };
+	}
+	return {
+		top:    spec.top    ?? 0,
+		right:  spec.right  ?? 0,
+		bottom: spec.bottom ?? 0,
+		left:   spec.left   ?? 0,
+	};
 };
 
 export class Window {
@@ -66,6 +111,20 @@ export class Window {
 	 *  `getCell()` throws. Focus-cycle in WindowManager skips invisible focusable
 	 *  controls. Default: true. */
 	private visible: boolean = true;
+	/** Layout algorithm applied to direct children. 'absolute' keeps the pre-flex
+	 *  behaviour; 'row' / 'column' / 'grid' activate the flex engine. */
+	private layoutMode: LayoutMode;
+	/** Spacing (in cells) between adjacent children for flex / grid layouts. */
+	private gap: number;
+	/** Padding applied inside the border (in addition to the border inset).
+	 *  Influences `getInnerSize()` / `getInnerOffset()`. */
+	private padding: Padding;
+	/** Number of columns for `layout: 'grid'`. */
+	private gridColumns: number;
+	/** Cross-axis alignment for row/column layouts. */
+	private alignItems: AlignItems;
+	/** Main-axis distribution of leftover space when no flex-grow child consumes it. */
+	private justifyContent: JustifyContent;
 
 	/** Creates a window from the given properties.
 	 *  For percentage-based sizes, call addChild() before writing content to the window.
@@ -88,6 +147,12 @@ export class Window {
 		this.background = wp.background ?? 0;
 		this.border   = resolveBorder(wp.border ?? wp.defaultBorder);
 		this.borderColorExplicit = this.border !== false && this.border.color !== undefined;
+		this.layoutMode     = wp.layout         ?? 'absolute';
+		this.gap            = wp.gap            ?? 0;
+		this.padding        = resolvePadding(wp.padding);
+		this.gridColumns    = Math.max(1, wp.gridColumns ?? 1);
+		this.alignItems     = wp.alignItems     ?? 'stretch';
+		this.justifyContent = wp.justifyContent ?? 'start';
 
 		const { w, h } = size.isAbsolute() ? size.resolve(0, 0) : { w: 1, h: 1 };
 		this.region  = new Region(w, h);
@@ -121,16 +186,30 @@ export class Window {
 		};
 	}
 
-	/** Returns the top-left offset of the content area, accounting for decorations such as borders. */
+	/** Returns the combined per-side inset (border + padding) that defines the
+	 *  inner content area. Padding stacks on top of the border inset. */
+	private innerInset(): Padding {
+		const b = this.borderInset();
+		return {
+			top:    b.top    + this.padding.top,
+			right:  b.right  + this.padding.right,
+			bottom: b.bottom + this.padding.bottom,
+			left:   b.left   + this.padding.left,
+		};
+	}
+
+	/** Returns the top-left offset of the content area, accounting for
+	 *  decorations (border) and layout insets (padding). */
 	public getInnerOffset(): { x: number; y: number } {
-		const { left, top } = this.borderInset();
+		const { left, top } = this.innerInset();
 		return { x: left, y: top };
 	}
 
-	/** Returns the dimensions of the content area, accounting for decorations such as borders. */
+	/** Returns the dimensions of the content area, accounting for decorations
+	 *  (border) and layout insets (padding). */
 	public getInnerSize(): TerminalSize {
 		const { width, height } = this.getSize();
-		const { top, right, bottom, left } = this.borderInset();
+		const { top, right, bottom, left } = this.innerInset();
 		return {
 			width:  Math.max(0, width  - left - right),
 			height: Math.max(0, height - top  - bottom),
@@ -205,21 +284,15 @@ export class Window {
 				: this.registry.getNamedForeground(BUILTIN_BORDER, 240);
 	}
 
-	/** Adds a child window. If the child uses percentage-based sizes they are resolved immediately
-	 *  against this window's inner dimensions (excluding decorations such as borders).
-	 *  Position is resolved relative to the inner area and stored on child.x/y. */
+	/** Adds a child window. The final position and (for non-absolute sizes) the
+	 *  final dimensions are computed by the parent's layout engine: in
+	 *  'absolute' layout each child resolves its own Pos/Size; in 'row',
+	 *  'column', or 'grid' layouts the engine distributes the inner area
+	 *  across every visible child. Re-laying out on addChild keeps sibling
+	 *  geometry consistent when more children join the stack. */
 	public addChild(child: Window): void {
-		const { width: pw, height: ph } = this.getInnerSize();
-		const { x: ox, y: oy } = this.getInnerOffset();
-		if (!child.sizeSpec.isAbsolute()) {
-			const { w, h } = child.sizeSpec.resolve(pw, ph);
-			child.resizeRegions(w, h);
-		}
-		const { width: cw, height: ch } = child.getSize();
-		const { x, y } = child.posSpec.resolve(pw, ph, cw, ch);
-		child.x = x + ox;
-		child.y = y + oy;
 		this.children.push(child);
+		this.runLayout();
 	}
 
 	/** Returns a resolved Cell (char + CellAttributes) at (x, y) from the display buffer.
@@ -511,18 +584,17 @@ export class Window {
 		}
 	}
 
-	/** Copies a child's display buffer onto this window's display buffer, clipping to this window's bounds.
-	 *  Styles are transferred from the child's registry into this window's registry.
-	 *  Position is re-resolved from the child's Pos spec relative to the inner content area on every render. */
+	/** Copies a child's display buffer onto this window's display buffer,
+	 *  clipping to this window's bounds. Styles are transferred from the child's
+	 *  registry into this window's registry. The child's (x, y) was computed by
+	 *  the layout engine on addChild / reflowChildren / setSize, so blit can
+	 *  read it directly — this keeps absolute and flex paths on the same code. */
 	private blitChild(child: Window): void {
 		const chars         = child.region.getChars();
 		const childStyleIds = child.region.getStyleIds();
 		const { width: cw, height: ch } = child.getSize();
-		const { width: pw, height: ph } = this.getInnerSize();
-		const { x: ox, y: oy } = this.getInnerOffset();
-		const { x: cx, y: cy } = child.posSpec.resolve(pw, ph, cw, ch);
-		const ax = cx + ox;
-		const ay = cy + oy;
+		const ax = child.x;
+		const ay = child.y;
 		const { width: totalW, height: totalH } = this.getSize();
 
 		for (let childY = 0; childY < ch; childY++) {
@@ -563,11 +635,30 @@ export class Window {
 		this.resizeRegions(width, height);
 	}
 
-	/** Re-resolves sizes and absolute positions for every direct child against the current inner area.
-	 *  Called after this window is resized so that percentage-based children get correct dimensions. */
+	/** Re-resolves sizes and absolute positions for every direct child against
+	 *  the current inner area. Delegates to the layout engine so percentage
+	 *  children, flex children, and grid cells are all updated from the same
+	 *  code path. Called after this window is resized or a new child is added. */
 	private reflowChildren(): void {
+		this.runLayout();
+	}
+
+	/** Runs the layout engine against the current inner area. Dispatches to
+	 *  absolute / row / column / grid implementations based on `layoutMode`. */
+	private runLayout(): void {
 		const { width: pw, height: ph } = this.getInnerSize();
 		const { x: ox, y: oy }          = this.getInnerOffset();
+		switch (this.layoutMode) {
+			case 'absolute': this.layoutAbsolute(pw, ph, ox, oy); return;
+			case 'row':
+			case 'column':   this.layoutFlex(this.layoutMode, pw, ph, ox, oy); return;
+			case 'grid':     this.layoutGrid(pw, ph, ox, oy); return;
+		}
+	}
+
+	/** Absolute layout: each child independently resolves its Pos/Size against
+	 *  the parent's inner area — the pre-flex behaviour. */
+	private layoutAbsolute(pw: number, ph: number, ox: number, oy: number): void {
 		for (const child of this.children) {
 			if (!child.sizeSpec.isAbsolute()) {
 				const { w, h } = child.sizeSpec.resolve(pw, ph);
@@ -578,6 +669,167 @@ export class Window {
 			child.x = x + ox;
 			child.y = y + oy;
 		}
+	}
+
+	/** Row / column flex layout. The main axis (width for 'row', height for
+	 *  'column') is distributed across children: each child starts with its
+	 *  basis (abs → value, pct → fraction of parent, flex → flex basis,
+	 *  content → measured natural size), then remaining slack is distributed
+	 *  pro rata by `grow`, and negative slack by `shrink`. The cross axis is
+	 *  aligned via `alignItems` — 'stretch' expands flex/content children to
+	 *  the full inner cross dimension. `justifyContent` governs leftover
+	 *  distribution only when no child consumes slack via flex-grow. Invisible
+	 *  children are skipped so `setVisible(false)` effectively removes them
+	 *  from the stack. Children are ordered by `Pos.flex(order)` first, then
+	 *  by addChild insertion (stable). */
+	private layoutFlex(mode: 'row' | 'column', pw: number, ph: number, ox: number, oy: number): void {
+		const ordered = this.orderedVisibleChildren();
+		if (ordered.length === 0) return;
+		const isRow = mode === 'row';
+		const mainParent  = isRow ? pw : ph;
+		const crossParent = isRow ? ph : pw;
+		const gap = this.gap;
+
+		// First pass: basis sizes per child.
+		const items = ordered.map((c): FlexItem => {
+			const mainSpec  = isRow ? c.sizeSpec.getWidthSpec()  : c.sizeSpec.getHeightSpec();
+			const crossSpec = isRow ? c.sizeSpec.getHeightSpec() : c.sizeSpec.getWidthSpec();
+			return {
+				child:     c,
+				mainSpec,
+				crossSpec,
+				mainSize:  resolveFlexBasis(mainSpec,  mainParent,  isRow ? c.getSize().width  : c.getSize().height),
+				crossSize: resolveFlexBasis(crossSpec, crossParent, isRow ? c.getSize().height : c.getSize().width),
+			};
+		});
+
+		// Distribute leftover main-axis space.
+		const totalGap = Math.max(0, items.length - 1) * gap;
+		const totalMain = items.reduce((s, it) => s + it.mainSize, 0);
+		let remainder = mainParent - totalMain - totalGap;
+		const totalGrow = items.reduce((s, it) => s + (it.mainSpec.mode === 'flex' ? it.mainSpec.grow : 0), 0);
+		if (remainder > 0 && totalGrow > 0) {
+			let distributed = 0;
+			for (const it of items) {
+				if (it.mainSpec.mode !== 'flex') continue;
+				const share = Math.floor(remainder * (it.mainSpec.grow / totalGrow));
+				it.mainSize += share;
+				distributed += share;
+			}
+			// Hand the integer-truncation leftover to the last flex child.
+			const leftover = remainder - distributed;
+			if (leftover > 0) {
+				for (let i = items.length - 1; i >= 0; i--) {
+					if (items[i]!.mainSpec.mode === 'flex') { items[i]!.mainSize += leftover; break; }
+				}
+			}
+			remainder = 0;
+		} else if (remainder < 0) {
+			const totalShrink = items.reduce((s, it) => s + (it.mainSpec.mode === 'flex' ? it.mainSpec.shrink : 0), 0);
+			if (totalShrink > 0) {
+				for (const it of items) {
+					if (it.mainSpec.mode !== 'flex') continue;
+					const take = Math.ceil(Math.abs(remainder) * (it.mainSpec.shrink / totalShrink));
+					it.mainSize = Math.max(0, it.mainSize - take);
+				}
+				const consumed = items.reduce((s, it) => s + it.mainSize, 0);
+				remainder = mainParent - consumed - totalGap;
+			}
+		}
+
+		// Apply cross-axis stretch where allowed.
+		for (const it of items) {
+			const mode = it.crossSpec.mode;
+			if (this.alignItems === 'stretch' && mode !== 'abs' && mode !== 'pct') {
+				it.crossSize = crossParent;
+			} else {
+				it.crossSize = Math.min(it.crossSize, crossParent);
+			}
+		}
+
+		// justifyContent kicks in only when there is positive slack with no grow.
+		let mainStart   = 0;
+		let itemSpacing = gap;
+		if (remainder > 0) {
+			switch (this.justifyContent) {
+				case 'center':         mainStart = Math.floor(remainder / 2); break;
+				case 'end':            mainStart = remainder; break;
+				case 'space-between':
+					if (items.length > 1) itemSpacing = gap + Math.floor(remainder / (items.length - 1));
+					break;
+				case 'space-around':
+					if (items.length > 0) {
+						const pad = Math.floor(remainder / (items.length * 2));
+						mainStart   = pad;
+						itemSpacing = gap + pad * 2;
+					}
+					break;
+			}
+		}
+
+		// Write final sizes and positions.
+		let cursor = mainStart;
+		for (const it of items) {
+			const mainSize  = Math.max(0, it.mainSize);
+			const crossSize = Math.max(0, it.crossSize);
+			const newW = isRow ? mainSize : crossSize;
+			const newH = isRow ? crossSize : mainSize;
+			if (newW !== it.child.getSize().width || newH !== it.child.getSize().height) {
+				it.child.resizeRegions(newW, newH);
+			}
+			let crossPos = 0;
+			if (this.alignItems !== 'stretch') {
+				const free = crossParent - crossSize;
+				if      (this.alignItems === 'center') crossPos = Math.floor(free / 2);
+				else if (this.alignItems === 'end')    crossPos = free;
+			}
+			if (isRow) {
+				it.child.x = ox + cursor;
+				it.child.y = oy + crossPos;
+			} else {
+				it.child.x = ox + crossPos;
+				it.child.y = oy + cursor;
+			}
+			cursor += mainSize + itemSpacing;
+		}
+	}
+
+	/** Grid layout: children are placed row-major into equally sized cells.
+	 *  Each cell's width is `(innerWidth - gap * (cols - 1)) / cols` (floored);
+	 *  heights use the same formula with the derived row count. Children are
+	 *  resized to the cell dimensions and positioned at the cell's top-left.
+	 *  Invisible children are skipped. */
+	private layoutGrid(pw: number, ph: number, ox: number, oy: number): void {
+		const ordered = this.orderedVisibleChildren();
+		if (ordered.length === 0) return;
+		const cols = this.gridColumns;
+		const rows = Math.max(1, Math.ceil(ordered.length / cols));
+		const gap = this.gap;
+		const cellW = Math.max(0, Math.floor((pw - gap * Math.max(0, cols - 1)) / cols));
+		const cellH = Math.max(0, Math.floor((ph - gap * Math.max(0, rows - 1)) / rows));
+		for (let i = 0; i < ordered.length; i++) {
+			const child = ordered[i]!;
+			const c = i % cols;
+			const r = Math.floor(i / cols);
+			if (cellW !== child.getSize().width || cellH !== child.getSize().height) {
+				child.resizeRegions(cellW, cellH);
+			}
+			child.x = ox + c * (cellW + gap);
+			child.y = oy + r * (cellH + gap);
+		}
+	}
+
+	/** Returns visible children sorted by Pos.flex(order) ascending; children
+	 *  without Pos.flex default to order 0. Stable w.r.t. addChild insertion. */
+	private orderedVisibleChildren(): Window[] {
+		const visible = this.children.filter(c => c.visible);
+		const withIndex = visible.map((child, idx) => ({
+			child,
+			order: child.posSpec.getFlexOrder() ?? 0,
+			idx,
+		}));
+		withIndex.sort((a, b) => (a.order - b.order) || (a.idx - b.idx));
+		return withIndex.map(e => e.child);
 	}
 
 	/** Returns the flat index for (x, y) in the region buffer (used by getCell). */

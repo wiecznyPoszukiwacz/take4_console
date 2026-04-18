@@ -4,7 +4,7 @@ import { StyleRegistry } from '../src/Screen/StyleRegistry.mjs';
 import { setRegistry } from '../src/Screen/RegistryHolder.mjs';
 import { setPuaWidth } from '../src/Screen/textWidth.mjs';
 import { Pos } from '../src/Screen/Pos.mjs';
-import { Size } from '../src/Screen/Size.mjs';
+import { Size, flex, content } from '../src/Screen/Size.mjs';
 
 describe('Window', () => {
   describe('constructor / getSize()', () => {
@@ -881,6 +881,296 @@ describe('Window', () => {
       expect(win.getCell(0, 1).char).toBe('║');
       // corners stay 'single'
       expect(win.getCell(0, 0).char).toBe('┌');
+    });
+  });
+
+  describe('padding option', () => {
+    it('uniform padding shrinks inner area on every side', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), padding: 2 });
+      expect(win.getInnerSize()  ).toEqual({ width: 16, height: 6 });
+      expect(win.getInnerOffset()).toEqual({ x: 2, y: 2 });
+    });
+
+    it('per-side record applies each value independently', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(20, 10),
+        padding: { top: 1, right: 2, bottom: 3, left: 4 } });
+      expect(win.getInnerSize()  ).toEqual({ width: 14, height: 6 });
+      expect(win.getInnerOffset()).toEqual({ x: 4, y: 1 });
+    });
+
+    it('stacks on top of the border inset', () => {
+      const win = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), border: true, padding: 2 });
+      // border: 1 on each side; padding: 2 on each side → inset = 3
+      expect(win.getInnerSize()  ).toEqual({ width: 14, height: 4 });
+      expect(win.getInnerOffset()).toEqual({ x: 3, y: 3 });
+    });
+
+    it('positions absolute-layout children inside the padded area', () => {
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 10), padding: 2 });
+      const child  = new Window({ pos: new Pos(0, 0), size: new Size(3, 3) });
+      child.fill('P');
+      parent.addChild(child);
+      parent.render();
+      // child should land at (2, 2) — the padded inner offset
+      expect(parent.getCell(2, 2).char).toBe('P');
+      expect(parent.getCell(4, 4).char).toBe('P');
+    });
+  });
+
+  describe('flex layout – row', () => {
+    it('three grow=1 flex children share inner width evenly', () => {
+      const reg = new StyleRegistry();
+      setRegistry(reg);
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const c = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.addChild(c);
+      expect(a.getSize()).toEqual({ width: 10, height: 5 });
+      expect(b.getSize()).toEqual({ width: 10, height: 5 });
+      expect(c.getSize()).toEqual({ width: 10, height: 5 });
+      expect(a.x).toBe(0);
+      expect(b.x).toBe(10);
+      expect(c.x).toBe(20);
+    });
+
+    it('distributes leftover after absolute siblings among grow children', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const fixed = new Window({ pos: Pos.flex(), size: new Size(10, 3) });
+      const rest  = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(fixed);
+      parent.addChild(rest);
+      expect(fixed.getSize()).toEqual({ width: 10, height: 3 });
+      expect(rest.getSize() ).toEqual({ width: 20, height: 5 });
+      expect(rest.x).toBe(10);
+    });
+
+    it('honours gap between children', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 5), layout: 'row', gap: 2 });
+      const a = new Window({ pos: Pos.flex(), size: new Size(5, 3) });
+      const b = new Window({ pos: Pos.flex(), size: new Size(5, 3) });
+      parent.addChild(a);
+      parent.addChild(b);
+      expect(a.x).toBe(0);
+      expect(b.x).toBe(5 + 2);
+    });
+
+    it('grow shares leftover in the declared ratio', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: new Size(flex(1), flex()) });
+      const b = new Window({ pos: Pos.flex(), size: new Size(flex(2), flex()) });
+      parent.addChild(a);
+      parent.addChild(b);
+      // 30 leftover split 1:2 → 10 / 20, last flex gets truncation remainder if any
+      expect(a.getSize().width).toBe(10);
+      expect(b.getSize().width).toBe(20);
+    });
+
+    it('content() measures the child natural size', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const auto  = new Window({ pos: Pos.flex(), size: new Size(content(), content()) });
+      const grow  = new Window({ pos: Pos.flex(), size: Size.flex() });
+      // declare a non-default natural width via setSize before addChild
+      auto.setSize(7, 2);
+      parent.addChild(auto);
+      parent.addChild(grow);
+      expect(auto.getSize().width).toBe(7);
+      expect(grow.getSize().width).toBe(23);
+    });
+
+    it('Pos.flex(order) sorts children independently of addChild order', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(2), size: new Size(5, 3) }); a.fill('A');
+      const b = new Window({ pos: Pos.flex(1), size: new Size(5, 3) }); b.fill('B');
+      const c = new Window({ pos: Pos.flex(0), size: new Size(5, 3) }); c.fill('C');
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.addChild(c);
+      parent.render();
+      // after sort by order: c (0), b (1), a (2)
+      expect(parent.getCell(0,  0).char).toBe('C');
+      expect(parent.getCell(5,  0).char).toBe('B');
+      expect(parent.getCell(10, 0).char).toBe('A');
+    });
+
+    it('alignItems stretch expands content children on cross axis', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), layout: 'row', alignItems: 'stretch' });
+      const child  = new Window({ pos: Pos.flex(), size: new Size(5, content()) });
+      parent.addChild(child);
+      expect(child.getSize()).toEqual({ width: 5, height: 10 });
+    });
+
+    it('alignItems center places child in the middle of the cross axis', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), layout: 'row', alignItems: 'center' });
+      const child  = new Window({ pos: Pos.flex(), size: new Size(5, 2) });
+      parent.addChild(child);
+      // cross free = 10 - 2 = 8 → centered at y = 4
+      expect(child.y).toBe(4);
+    });
+
+    it('justifyContent end pushes children to the right when no grow child soaks up slack', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 5), layout: 'row', justifyContent: 'end' });
+      const child  = new Window({ pos: Pos.flex(), size: new Size(5, 3) });
+      parent.addChild(child);
+      expect(child.x).toBe(15);
+    });
+
+    it('justifyContent space-between distributes slack between children', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 5), layout: 'row', justifyContent: 'space-between' });
+      const a = new Window({ pos: Pos.flex(), size: new Size(5, 3) });
+      const b = new Window({ pos: Pos.flex(), size: new Size(5, 3) });
+      parent.addChild(a);
+      parent.addChild(b);
+      expect(a.x).toBe(0);
+      expect(b.x).toBe(15);
+    });
+
+    it('padding shrinks the area available to flex children', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), layout: 'row', padding: 1 });
+      const child  = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(child);
+      // inner area = 18 × 8; child stretches to 18 × 8 and sits at (1, 1)
+      expect(child.getSize()).toEqual({ width: 18, height: 8 });
+      expect(child.x).toBe(1);
+      expect(child.y).toBe(1);
+    });
+
+    it('setSize reflows every flex child', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.setSize(60, 8);
+      expect(a.getSize()).toEqual({ width: 30, height: 8 });
+      expect(b.getSize()).toEqual({ width: 30, height: 8 });
+      expect(b.x).toBe(30);
+    });
+
+    it('invisible children are skipped by the layout engine', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(30, 5), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const c = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.addChild(c);
+      b.setVisible(false);
+      // need to re-run layout; setVisible doesn't trigger, but setSize does
+      parent.setSize(30, 5);
+      expect(a.getSize().width).toBe(15);
+      expect(c.getSize().width).toBe(15);
+      expect(c.x).toBe(15);
+    });
+  });
+
+  describe('flex layout – column', () => {
+    it('stacks children vertically and shares leftover height', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 30), layout: 'column' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      expect(a.getSize()).toEqual({ width: 10, height: 15 });
+      expect(b.getSize()).toEqual({ width: 10, height: 15 });
+      expect(a.y).toBe(0);
+      expect(b.y).toBe(15);
+    });
+
+    it('honours gap on the main axis (height)', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 20), layout: 'column', gap: 3 });
+      const a = new Window({ pos: Pos.flex(), size: new Size(10, 4) });
+      const b = new Window({ pos: Pos.flex(), size: new Size(10, 4) });
+      parent.addChild(a);
+      parent.addChild(b);
+      expect(a.y).toBe(0);
+      expect(b.y).toBe(4 + 3);
+    });
+  });
+
+  describe('grid layout', () => {
+    it('splits inner area into equal cells row-major', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 10), layout: 'grid', gridColumns: 2 });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const c = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const d = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.addChild(c);
+      parent.addChild(d);
+      // cells 10 × 5
+      expect(a.getSize()).toEqual({ width: 10, height: 5 });
+      expect(a.x).toBe(0);  expect(a.y).toBe(0);
+      expect(b.x).toBe(10); expect(b.y).toBe(0);
+      expect(c.x).toBe(0);  expect(c.y).toBe(5);
+      expect(d.x).toBe(10); expect(d.y).toBe(5);
+    });
+
+    it('honours gap between cells', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(22, 12), layout: 'grid', gridColumns: 2, gap: 2 });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const c = new Window({ pos: Pos.flex(), size: Size.flex() });
+      const d = new Window({ pos: Pos.flex(), size: Size.flex() });
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.addChild(c);
+      parent.addChild(d);
+      // cells (22 - 2)/2 = 10 wide, (12 - 2)/2 = 5 high
+      expect(a.getSize()).toEqual({ width: 10, height: 5 });
+      expect(b.x).toBe(10 + 2);
+      expect(c.y).toBe(5 + 2);
+      expect(d.x).toBe(10 + 2);
+      expect(d.y).toBe(5 + 2);
+    });
+  });
+
+  describe('flex layout – rendering', () => {
+    it('children render at their computed flex positions', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 3), layout: 'row' });
+      const a = new Window({ pos: Pos.flex(), size: Size.flex() }); a.fill('A');
+      const b = new Window({ pos: Pos.flex(), size: Size.flex() }); b.fill('B');
+      parent.addChild(a);
+      parent.addChild(b);
+      // refill after resize — addChild's runLayout replaced the regions
+      a.fill('A');
+      b.fill('B');
+      parent.render();
+      expect(parent.getCell(0,  1).char).toBe('A');
+      expect(parent.getCell(9,  1).char).toBe('A');
+      expect(parent.getCell(10, 1).char).toBe('B');
+      expect(parent.getCell(19, 1).char).toBe('B');
+    });
+
+    it('absolute layout still respects Pos.right() etc. (back-compat)', () => {
+      setRegistry(new StyleRegistry());
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
+      const child  = new Window({ pos: Pos.right(), size: new Size(5, 3) });
+      child.fill('R');
+      parent.addChild(child);
+      parent.render();
+      expect(parent.getCell(15, 0).char).toBe('R');
+      expect(parent.getCell(19, 0).char).toBe('R');
     });
   });
 });

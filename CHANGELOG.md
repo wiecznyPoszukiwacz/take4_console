@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.24.0] – 2026-04-18
+
+### Added — backlog P0-3 (flex layout / auto-sizing)
+- **`WindowProperties.layout: 'absolute' | 'row' | 'column' | 'grid'`** — nowy,
+  per-okienny tryb layoutu dla bezpośrednich dzieci. Domyślnie `'absolute'`,
+  czyli dotychczasowe zachowanie (`Pos`/`Size` rozwiązuje każde dziecko
+  niezależnie). `'row'` i `'column'` uruchamiają silnik flex (rozdzielenie osi
+  głównej pro-rata `grow`, skurcz `shrink`, wyrównanie cross-axis), `'grid'`
+  rozkłada dzieci w równe komórki wiersz-po-wierszu.
+- **Nowe pola `WindowProperties`**: `gap` (odstęp między dziećmi w cellach),
+  `padding` (uniform number | `[v, h]` tuple | per-side record; wpływa na
+  `getInnerSize()` / `getInnerOffset()` — stackuje na border inset),
+  `gridColumns` (liczba kolumn dla `grid`), `alignItems`
+  (`start | center | end | stretch`, domyślnie `'stretch'`) oraz
+  `justifyContent` (`start | center | end | space-between | space-around`).
+- **`Pos.flex(order?)` / `Pos#getFlexOrder()`** — marker pozycji flex. Silnik
+  layoutu parenta ustawia finalne `child.x / child.y`; `order` sortuje dzieci
+  niezależnie od kolejności `addChild` (stabilne ties → kolejność wstawiania).
+- **`Size.flex(grow?, shrink?, basis?)` / `Size.content()`** oraz osobne
+  fabryki `flex()` i `content()` — `Size.flex(...)` zaznacza oba axes jako
+  flex (silnik decyduje który jest main vs cross na podstawie parenta),
+  `Size.content()` używa aktualnych wymiarów regionu dziecka jako naturalnego
+  rozmiaru. Dla mieszanych osi: `new Size(flex(), 10)` / `new Size(content(),
+  pct(50))`. `Size.isAbsolute()` zwraca `false` dla flex/content — `resolve()`
+  daje bezpieczny fallback (basis dla flex, 1 dla content) dopóki silnik nie
+  nadpisze wartości. Nowe gettery `getWidthSpec()` / `getHeightSpec()`.
+- **Silnik layoutu w `Window`** — `addChild` i `setSize` (→ `reflowChildren`)
+  delegują do `runLayout()`. Absolute path zachowany 1:1 dla back-compat;
+  row / column liczą basis, rozdzielają `remainder` przez `grow` (całkowite,
+  reszta od truncation trafia do ostatniego flex-a), skracają przy ujemnym
+  remainderze przez `shrink`, aplikują stretch/align cross-axis i — gdy nic
+  nie zjada slack'u — uruchamiają `justifyContent`. `grid` liczy równe komórki
+  `(inner - gap * (cols|rows - 1)) / (cols|rows)`. Niewidoczne dzieci są
+  pomijane, więc `setVisible(false)` wyjmuje je ze stacka.
+- **YAML (InterfaceBuilder)** — wspiera `pos: flex` / `pos: { flex: N }`,
+  `size: flex` / `size: content` / `size: { flex: { grow, shrink, basis } }`,
+  a także per-axis `size: { width: content, height: { flex: { grow: 2 } } }`.
+  Nowe pola `layout`, `gap`, `padding`, `gridColumns`, `alignItems`,
+  `justifyContent` na każdej definicji okna.
+- **`Window#blitChild`** czyta teraz `child.x / child.y` zamiast re-solve'ować
+  `posSpec`, więc absolute i flex lecą tym samym kodem kompozycji.
+
+### Demo
+- `src/layout.yaml` — dolny pasek akcji (Delete / Cancel /  Save) przekonwertowany
+  z trzech absolutnych pozycji na kontener `buttonRow` z `layout: row`,
+  `gap: 1`, `alignItems: stretch` i dzieckiem-spacerem `{ size: flex }` między
+  "Delete" a grupą "Cancel /  Save" — ten sam wygląd co wcześniej, zapisany
+  deklaratywnie, automatycznie re-flow przy SIGWINCH.
+
 ## [0.23.0] – 2026-04-16
 
 ### Added — backlog P0-5 (WindowManager.pause / resume)

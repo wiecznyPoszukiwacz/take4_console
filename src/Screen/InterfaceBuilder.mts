@@ -5,6 +5,7 @@ import type {
   YamlWindowDef,
   YamlPosSpec,
   YamlSizeSpec,
+  YamlDimValue,
   YamlAxisValue,
   StyleId,
   Focusable,
@@ -14,7 +15,8 @@ import { Window } from './Window.mjs';
 import { Screen } from './Screen.mjs';
 import { WindowManager } from './WindowManager.mjs';
 import { Pos, Pct, pct } from './Pos.mjs';
-import { Size } from './Size.mjs';
+import { Size, flex, content } from './Size.mjs';
+import type { DimValue } from './Size.mjs';
 import { getRegistry } from './RegistryHolder.mjs';
 import { Button }       from './controls/Button.mjs';
 import { TextBox }      from './controls/TextBox.mjs';
@@ -57,6 +59,7 @@ function parsePos(spec: YamlPosSpec | undefined): Pos {
   if (spec === 'topRight')    return Pos.topRight();
   if (spec === 'bottomLeft')  return Pos.bottomLeft();
   if (spec === 'bottomRight') return Pos.bottomRight();
+  if (spec === 'flex')        return Pos.flex();
   if (typeof spec === 'object') {
     if ('preset' in spec) {
       const off = spec.offset !== undefined ? parseAxisValue(spec.offset) : 0;
@@ -67,6 +70,9 @@ function parsePos(spec: YamlPosSpec | undefined): Pos {
         case 'bottom': return Pos.bottom(off);
       }
     }
+    if ('flex' in spec) {
+      return Pos.flex(spec.flex ?? 0);
+    }
     if ('x' in spec && 'y' in spec) {
       return new Pos(parseAxisValue(spec.x), parseAxisValue(spec.y));
     }
@@ -74,14 +80,36 @@ function parsePos(spec: YamlPosSpec | undefined): Pos {
   throw new Error(`Invalid pos spec: ${JSON.stringify(spec)}`);
 }
 
+/** Converts a single axis value within a Size spec — extends the plain-axis
+ *  parser with the 'flex' / 'content' shorthands and the `{ flex: {...} }` /
+ *  `{ content: true }` objects so each axis can be chosen independently. */
+function parseDimValue(v: YamlDimValue): DimValue {
+  if (v === 'flex')    return flex();
+  if (v === 'content') return content();
+  if (typeof v === 'object' && v !== null) {
+    if ('flex' in v) {
+      const basis = v.flex.basis !== undefined ? parseAxisValue(v.flex.basis) : 0;
+      return flex(v.flex.grow ?? 1, v.flex.shrink ?? 1, basis);
+    }
+    if ('content' in v && v.content === true) return content();
+  }
+  return parseAxisValue(v as YamlAxisValue);
+}
+
 /** Converts a YamlSizeSpec to a Size instance. */
 function parseSize(spec: YamlSizeSpec): Size {
-  if (spec === 'fill') return Size.fill();
+  if (spec === 'fill')    return Size.fill();
+  if (spec === 'flex')    return Size.flex();
+  if (spec === 'content') return Size.content();
   if (typeof spec === 'object') {
     if ('fillWidth'  in spec) return Size.fillWidth(parseAxisValue(spec.fillWidth));
     if ('fillHeight' in spec) return Size.fillHeight(parseAxisValue(spec.fillHeight));
+    if ('flex' in spec) {
+      const basis = spec.flex.basis !== undefined ? parseAxisValue(spec.flex.basis) : 0;
+      return Size.flex(spec.flex.grow ?? 1, spec.flex.shrink ?? 1, basis);
+    }
     if ('width' in spec && 'height' in spec) {
-      return new Size(parseAxisValue(spec.width), parseAxisValue(spec.height));
+      return new Size(parseDimValue(spec.width), parseDimValue(spec.height));
     }
   }
   throw new Error(`Invalid size spec: ${JSON.stringify(spec)}`);
@@ -193,13 +221,19 @@ export class InterfaceBuilder {
     /** Common window properties shared by all control types. */
     const wp: WindowProperties = {
       pos,
-      size:       def.size ? parseSize(def.size) : undefined,
-      background: bgId,
-      border:     def.border,
-      active:     def.active,
-      focused:    def.focused,
-      disabled:   def.disabled,
-      label:      def.label,
+      size:           def.size ? parseSize(def.size) : undefined,
+      background:     bgId,
+      border:         def.border,
+      active:         def.active,
+      focused:        def.focused,
+      disabled:       def.disabled,
+      label:          def.label,
+      layout:         def.layout,
+      gap:            def.gap,
+      padding:        def.padding,
+      gridColumns:    def.gridColumns,
+      alignItems:     def.alignItems,
+      justifyContent: def.justifyContent,
     };
 
     let win: Window;

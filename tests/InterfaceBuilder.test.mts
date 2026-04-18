@@ -513,4 +513,151 @@ windows:
       expect(() => builder.build(yaml, screen)).not.toThrow();
     });
   });
+
+  // ── P0-3: flex layout support in YAML ─────────────────────────────────────
+
+  describe('flex layout', () => {
+    it('row layout with pos: flex / size: flex distributes children across parent width', () => {
+      const yaml = `
+windows:
+  - id: row
+    size: { width: 30, height: 5 }
+    layout: row
+    children:
+      - id: a
+        pos: flex
+        size: flex
+      - id: b
+        pos: flex
+        size: flex
+      - id: c
+        pos: flex
+        size: flex
+`;
+      const result = builder.build(yaml, screen);
+      const a = result.get('a')!;
+      const b = result.get('b')!;
+      const c = result.get('c')!;
+      expect(a.getSize()).toEqual({ width: 10, height: 5 });
+      expect(b.getSize()).toEqual({ width: 10, height: 5 });
+      expect(c.getSize()).toEqual({ width: 10, height: 5 });
+      expect(a.x).toBe(0);
+      expect(b.x).toBe(10);
+      expect(c.x).toBe(20);
+    });
+
+    it('gap and justifyContent end push fixed-size children to the right', () => {
+      const yaml = `
+windows:
+  - id: row
+    size: { width: 20, height: 3 }
+    layout: row
+    gap: 1
+    justifyContent: end
+    children:
+      - id: a
+        pos: flex
+        size: { width: 5, height: 3 }
+      - id: b
+        pos: flex
+        size: { width: 5, height: 3 }
+`;
+      const result = builder.build(yaml, screen);
+      // 20 total, 2 * 5 = 10 children, gap 1 = 11, slack 9 → start at 9
+      expect(result.get('a')!.x).toBe(9);
+      expect(result.get('b')!.x).toBe(15);
+    });
+
+    it('column layout + padding + gap stacks children vertically inside the padded area', () => {
+      const yaml = `
+windows:
+  - id: col
+    size: { width: 10, height: 12 }
+    layout: column
+    padding: 1
+    gap: 1
+    children:
+      - id: a
+        pos: flex
+        size: flex
+      - id: b
+        pos: flex
+        size: flex
+`;
+      const result = builder.build(yaml, screen);
+      // inner = 8 × 10; gap 1 between two → each height 4 (floor((10-1)/2)=4)
+      const a = result.get('a')!;
+      const b = result.get('b')!;
+      expect(a.getSize()).toEqual({ width: 8, height: 4 });
+      expect(a.x).toBe(1);
+      expect(a.y).toBe(1);
+      expect(b.y).toBe(1 + 4 + 1);
+    });
+
+    it('grid layout distributes children into cells', () => {
+      const yaml = `
+windows:
+  - id: grid
+    size: { width: 20, height: 10 }
+    layout: grid
+    gridColumns: 2
+    children:
+      - { id: a, pos: flex, size: flex }
+      - { id: b, pos: flex, size: flex }
+      - { id: c, pos: flex, size: flex }
+      - { id: d, pos: flex, size: flex }
+`;
+      const result = builder.build(yaml, screen);
+      expect(result.get('a')!.getSize()).toEqual({ width: 10, height: 5 });
+      expect(result.get('d')!.x).toBe(10);
+      expect(result.get('d')!.y).toBe(5);
+    });
+
+    it('supports per-axis flex/content inside { width, height }', () => {
+      const yaml = `
+windows:
+  - id: row
+    size: { width: 30, height: 4 }
+    layout: row
+    children:
+      - id: auto
+        pos: flex
+        size: { width: content, height: 2 }
+      - id: grow
+        pos: flex
+        size: { width: { flex: { grow: 1 } }, height: 2 }
+`;
+      const result = builder.build(yaml, screen);
+      const auto = result.get('auto')!;
+      const grow = result.get('grow')!;
+      // 'auto' gets its natural width (1 by default for a fresh window)
+      // 'grow' soaks up the rest of 30: 30 - 1 = 29
+      expect(auto.getSize().width).toBe(1);
+      expect(grow.getSize().width).toBe(29);
+    });
+
+    it('pos: { flex: N } reorders flex children', () => {
+      const yaml = `
+windows:
+  - id: row
+    size: { width: 30, height: 3 }
+    layout: row
+    children:
+      - id: a
+        pos: { flex: 2 }
+        size: { width: 10, height: 3 }
+      - id: b
+        pos: { flex: 0 }
+        size: { width: 10, height: 3 }
+      - id: c
+        pos: { flex: 1 }
+        size: { width: 10, height: 3 }
+`;
+      const result = builder.build(yaml, screen);
+      // sorted: b (order 0) → c (1) → a (2)
+      expect(result.get('b')!.x).toBe(0);
+      expect(result.get('c')!.x).toBe(10);
+      expect(result.get('a')!.x).toBe(20);
+    });
+  });
 });

@@ -17,13 +17,17 @@ function toAxisSpec(v: number | Pct): AxisSpec {
 	return { mode: 'start', value: v };
 }
 
-/** Resolves a single axis spec to a pixel offset. */
+/** Resolves a single axis spec to a pixel offset. The 'flex' mode has no
+ *  meaningful absolute resolution — the parent's layout engine overwrites
+ *  child.x / child.y before blit, so this returns 0 as a safe fallback that
+ *  keeps the value inside the region until the layout pass fires. */
 function resolveAxis(spec: AxisSpec, parentSize: number, ownSize: number): number {
 	switch (spec.mode) {
 		case 'start':  return spec.value;
 		case 'end':    return parentSize - ownSize - spec.value;
 		case 'pct':    return Math.floor(parentSize * spec.value / 100);
 		case 'center': return Math.floor((parentSize - ownSize) / 2);
+		case 'flex':   return 0;
 	}
 }
 
@@ -93,6 +97,25 @@ export class Pos {
 	/** Aligns the bottom edge with the parent's bottom edge; x sets horizontal position. */
 	public static bottom(x: number | Pct = 0): Pos {
 		return Pos.fromSpecs(toAxisSpec(x), { mode: 'end', value: 0 });
+	}
+
+	/** Marks the window as a flex-layout slot on both axes — the parent's layout
+	 *  engine (row / column / grid) decides the final position. The optional
+	 *  `order` controls the relative placement within the flex stack: children
+	 *  with a lower `order` appear earlier, ties broken by addChild insertion.
+	 *  Children without `Pos.flex()` in a flex parent are treated as order 0
+	 *  and fall back to insertion order, so authors can mix ordered and
+	 *  unordered children freely. Default `order`: 0. */
+	public static flex(order: number = 0): Pos {
+		return Pos.fromSpecs({ mode: 'flex', order }, { mode: 'flex', order });
+	}
+
+	/** Returns the flex order when this Pos was produced via `Pos.flex(order)`,
+	 *  or `undefined` for every other position mode. Used by the layout engine
+	 *  to sort children. */
+	public getFlexOrder(): number | undefined {
+		if (this.xSpec.mode === 'flex') return (this.xSpec as { mode: 'flex'; order: number }).order;
+		return undefined;
 	}
 
 	/** Returns true when both axes are absolute-from-start values (no parent/own-size needed). */

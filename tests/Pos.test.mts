@@ -128,4 +128,28 @@ describe('Pos', () => {
       expect(Pos.bottom(7).resolve(100, 50, 10, 4)).toEqual({ x: 7, y: 46 });
     });
   });
+
+  describe('Pos.flex(order)', () => {
+    it('resolve() falls back to (0, 0) because layout engine overwrites child.x/y', () => {
+      expect(Pos.flex(3).resolve(100, 50, 10, 4)).toEqual({ x: 0, y: 0 });
+    });
+
+    it('isAbsolute() returns false so addChild does not short-circuit', () => {
+      expect(Pos.flex().isAbsolute()).toBe(false);
+    });
+
+    it('getFlexOrder() returns the provided order', () => {
+      expect(Pos.flex(7).getFlexOrder()).toBe(7);
+    });
+
+    it('getFlexOrder() defaults to 0', () => {
+      expect(Pos.flex().getFlexOrder()).toBe(0);
+    });
+
+    it('getFlexOrder() returns undefined for non-flex positions', () => {
+      expect(new Pos(0, 0).getFlexOrder()).toBeUndefined();
+      expect(Pos.center().getFlexOrder()).toBeUndefined();
+      expect(Pos.topLeft().getFlexOrder()).toBeUndefined();
+    });
+  });
 });

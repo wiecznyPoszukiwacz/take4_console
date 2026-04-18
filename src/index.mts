@@ -17,9 +17,10 @@ export { StyleRegistry }  from './Screen/StyleRegistry.mjs';
 export { WindowManager }  from './Screen/WindowManager.mjs';
 
 // ── Geometry ──────────────────────────────────────────────────────────────────
-export { Pos }            from './Screen/Pos.mjs';
-export { Pct, pct }       from './Screen/Pos.mjs';
-export { Size }           from './Screen/Size.mjs';
+export { Pos }                            from './Screen/Pos.mjs';
+export { Pct, pct }                       from './Screen/Pos.mjs';
+export { Size, FlexDim, ContentDim,
+         flex, content }                  from './Screen/Size.mjs';
 
 // ── Interactive controls ──────────────────────────────────────────────────────
 export { Button }         from './Screen/controls/Button.mjs';
@@ -71,6 +72,12 @@ export type {
 	ScreenFrameStats,
 	AxisSpec,
 	DimSpec,
+	FlexBasis,
+	LayoutMode,
+	AlignItems,
+	JustifyContent,
+	Padding,
+	PaddingSpec,
 
 	// Window / border
 	BorderStyle,

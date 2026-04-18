@@ -223,19 +223,36 @@ windows:
             # a demo.mts renderItem() draws icon + dimmed timestamp + right-aligned count.
 
       # ── Buttons ───────────────────────────────────────────────────────────────
-      - id: btnDisabled
-        type: button
-        pos: { x: 1, y: -4 }
-        size: { width: 11, height: 3 }
-        label: "Delete"
-        disabled: true
-      - id: btnCancel
-        type: button
-        pos: { x: -15, y: -4 }
-        size: { width: 11, height: 3 }
-        label: "Cancel"
-      - id: btnSave
-        type: button
-        pos: { x: -27, y: -4 }
-        size: { width: 11, height: 3 }
-        label: " Save"
+      # Bottom action bar — demonstrates P0-3 flex layout. The container uses
+      # `layout: row` with `gap: 1`; the middle `spacer` child has `size: flex`
+      # (grow=1 by default), so it soaks up leftover inner width between the
+      # left-aligned "Delete" and the right-aligned "Cancel" / " Save" group.
+      # alignItems: stretch pins children to the row height. This is the same
+      # visual outcome as the previous absolute positioning but authored
+      # declaratively, and it adapts automatically if the dialog is resized.
+      - id: buttonRow
+        pos: { x: 0, y: -4 }
+        size: { fillWidth: 3 }
+        layout: row
+        gap: 1
+        alignItems: stretch
+        children:
+          - id: btnDisabled
+            type: button
+            pos: flex
+            size: { width: 11, height: 3 }
+            label: "Delete"
+            disabled: true
+          - id: buttonSpacer
+            pos: flex
+            size: flex
+          - id: btnCancel
+            type: button
+            pos: flex
+            size: { width: 11, height: 3 }
+            label: "Cancel"
+          - id: btnSave
+            type: button
+            pos: flex
+            size: { width: 11, height: 3 }
+            label: " Save"
