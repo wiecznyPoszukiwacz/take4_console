@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.25.0] – 2026-04-18
+
+### Added — backlog P0-10 (InterfaceBuilder: register custom types)
+- **`InterfaceBuilder#registerType(name, factory)`** — rejestruje niestandardową
+  fabrykę kontrolki adresowalną przez `type: <name>` w YAML. Fabryka otrzymuje
+  surowy `YamlWindowDef` oraz `CustomTypeContext` z wstępnie zresolvowanym
+  `wp: WindowProperties`, aktywnym `registry: StyleRegistry` oraz pomocniczym
+  `resolveCallback(id)` przekierowującym do wcześniej zarejestrowanych
+  callbacków. Próba rejestracji pod nazwą wbudowanego typu rzuca wyjątkiem,
+  żeby uniknąć cichego shadowingu.
+- **`YamlWindowDef.props`** — wolne pole `Record<string, unknown>` forwardowane
+  w całości do fabryki; wbudowane typy je ignorują.
+- **Auto-focus registration** — jeśli fabryka zwróci `Window` z metodą
+  `handleKey()`, builder automatycznie rejestruje go w `WindowManager` razem
+  z łańcuchem rodziców, tak samo jak wbudowane `Button`/`TextBox`/itd.
+- **Eksporty**: nowe typy `CustomTypeContext` oraz `CustomTypeFactory` są
+  publicznie dostępne z `take4-console`.
+- **Demo**: w `src/demo.mts` rejestrowany jest custom typ `badge` (klasa
+  `Badge extends Window` malująca etykietę w render()), a `src/layout.yaml`
+  używa go w pasku nagłówka (`id: buildBadge`, `props: { text, color }`).
+
 ## [0.24.0] – 2026-04-18
 
 ### Added — backlog P0-3 (flex layout / auto-sizing)

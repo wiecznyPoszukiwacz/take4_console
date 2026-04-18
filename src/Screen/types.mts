@@ -1,6 +1,7 @@
 import type { Pos } from './Pos.mjs';
 import type { Size } from './Size.mjs';
 import type { Window } from './Window.mjs';
+import type { StyleRegistry } from './StyleRegistry.mjs';
 
 /** Text and background color, expressed as ANSI color number (0–255) or hex string (e.g. '#ff0000'). */
 export type Color = number | string;
@@ -531,8 +532,9 @@ export interface YamlStyleDef extends CellAttributes {
 export interface YamlWindowDef {
   /** Optional identifier for retrieving the built window from the result map. */
   id?: string;
-  /** Widget type. Defaults to 'window'. */
-  type?: YamlWindowType;
+  /** Widget type. Defaults to 'window'. May be a built-in tag or a custom
+   *  name registered via `InterfaceBuilder.registerType()`. */
+  type?: YamlWindowType | (string & {});
   /** Position within the parent. Defaults to { x: 0, y: 0 }. */
   pos?: YamlPosSpec;
   /** Dimensions of the window. Required for window/button/textbox/textarea; ignored for checkbox/radio (auto-sized). */
@@ -624,7 +626,27 @@ export interface YamlWindowDef {
   alignItems?: 'start' | 'center' | 'end' | 'stretch';
   /** Main-axis distribution of leftover space for `layout: row|column`. */
   justifyContent?: 'start' | 'center' | 'end' | 'space-between' | 'space-around';
+  /** Free-form property bag for user-registered custom types. Built-in types
+   *  ignore this field; custom factories read it via `node.props`. */
+  props?: Record<string, unknown>;
 }
+
+/** Context passed to factories registered via `InterfaceBuilder.registerType`.
+ *  Exposes pre-resolved common window properties plus the active style registry
+ *  so factories can compose their own control-specific options. */
+export interface CustomTypeContext {
+  /** Common window properties resolved from the YAML node (pos/size/border/…). */
+  wp: WindowProperties;
+  /** The style registry the builder is writing into. */
+  registry: StyleRegistry;
+  /** Looks up a callback registered via `InterfaceBuilder.registerCallback`. */
+  resolveCallback: (id: string | undefined) => ((...args: unknown[]) => void) | undefined;
+}
+
+/** Signature for a custom type factory registered via
+ *  `InterfaceBuilder.registerType`. The factory receives the raw YAML node
+ *  together with a resolved `ctx.wp` and must return the constructed window. */
+export type CustomTypeFactory = (node: YamlWindowDef, ctx: CustomTypeContext) => Window;
 
 /** Top-level YAML layout document consumed by InterfaceBuilder. */
 export interface YamlLayout {

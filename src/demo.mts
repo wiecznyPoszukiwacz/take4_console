@@ -13,7 +13,32 @@ import { Spinner }      from './Screen/controls/Spinner.mjs';
 import { Sparkline }    from './Screen/controls/Sparkline.mjs';
 import { ListBox }      from './Screen/controls/ListBox.mjs';
 import { Tabs }         from './Screen/controls/Tabs.mjs';
-import type { ListBoxRowSegments } from './Screen/types.mjs';
+import { Window } from './Screen/Window.mjs';
+import type { ListBoxRowSegments, WindowProperties, StyleId } from './Screen/types.mjs';
+
+/** Custom Window subclass registered with InterfaceBuilder via
+ *  `registerType('badge', …)` to demonstrate P0-10 — the factory resolves
+ *  `props.text` / `props.color` from the YAML node and stashes them so the
+ *  overridden render() can repaint the label every frame after the size is
+ *  resolved by the parent layout pass. */
+class Badge extends Window {
+	private msg: string;
+	private styleId: StyleId;
+
+	/** Constructs a Badge with its visible text and pre-registered style id. */
+	public constructor(wp: WindowProperties, msg: string, styleId: StyleId) {
+		super(wp);
+		this.msg     = msg;
+		this.styleId = styleId;
+	}
+
+	/** Repaints the badge text before delegating to the default compositing pipeline. */
+	public override render(): void {
+		this.clear();
+		this.writeText(this.msg, { x: 0, y: 0, style: this.styleId });
+		super.render();
+	}
+}
 
 type LedState = 'ok' | 'warn' | 'error' | 'off';
 type EventLevel = 'ok' | 'warn' | 'error';
@@ -62,6 +87,19 @@ const main = async (): Promise<void> => {
 
 	const layoutPath = join(dirname(fileURLToPath(import.meta.url)), 'layout.yaml');
 	const ib = new InterfaceBuilder();
+
+	// P0-10 demo: register a user-defined 'badge' control so the header can
+	// host a yellow "P0-10" label built from a class that never needed to be
+	// baked into InterfaceBuilder's built-in switch.
+	ib.registerType('badge', (node, ctx) => {
+		const props = (node.props ?? {}) as { text?: string; color?: number };
+		const styleId = screen.registerStyle({
+			background: 24,
+			foreground: props.color ?? 220,
+			bold:       true,
+		});
+		return new Badge(ctx.wp, props.text ?? '', styleId);
+	});
 
 	// P0-6 demo: when the user presses Enter in the username field, push an
 	// event into the log so the new onSubmit callback is visible at runtime.

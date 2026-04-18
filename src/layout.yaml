@@ -10,6 +10,16 @@ windows:
         spinnerStyle: braille
         label: "LIVE"
         chartColor: 231
+      # P0-10: custom control registered in demo.mts via
+      # InterfaceBuilder.registerType('badge', …). Fields under `props:` are
+      # forwarded to the factory untouched.
+      - id: buildBadge
+        type: badge
+        pos: { x: 18, y: 0 }
+        size: { width: 10, height: 1 }
+        props:
+          text: "P0-10 "
+          color: 220
 
   - id: statusBar
     pos: { preset: bottom }

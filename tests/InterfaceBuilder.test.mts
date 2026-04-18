@@ -660,4 +660,122 @@ windows:
       expect(result.get('a')!.x).toBe(20);
     });
   });
+
+  // ── Custom types (registerType) ─────────────────────────────────────────────
+
+  describe('registerType', () => {
+    it('instantiates a custom type via a registered factory', () => {
+      class CustomBox extends Window {
+        public readonly tag = 'custom-box';
+      }
+      builder.registerType('custombox', (_node, ctx) => new CustomBox(ctx.wp));
+      const yaml = `
+windows:
+  - id: cb
+    type: custombox
+    size: { width: 10, height: 3 }
+`;
+      const result = builder.build(yaml, screen);
+      const win = result.get('cb');
+      expect(win).toBeInstanceOf(CustomBox);
+      expect(win!.getSize()).toEqual({ width: 10, height: 3 });
+    });
+
+    it('passes through node.props to the factory', () => {
+      let seen: unknown = undefined;
+      builder.registerType('propreader', (node, ctx) => {
+        seen = node.props;
+        return new Window(ctx.wp);
+      });
+      const yaml = `
+windows:
+  - id: w
+    type: propreader
+    size: { width: 5, height: 2 }
+    props:
+      count: 7
+      label: hello
+`;
+      builder.build(yaml, screen);
+      expect(seen).toEqual({ count: 7, label: 'hello' });
+    });
+
+    it('resolves callback IDs through ctx.resolveCallback', () => {
+      const spy = vi.fn();
+      builder.registerCallback('tap', spy);
+      let resolved: ((...args: unknown[]) => void) | undefined = undefined;
+      builder.registerType('cbtaker', (node, ctx) => {
+        resolved = ctx.resolveCallback(node.onPress);
+        return new Window(ctx.wp);
+      });
+      const yaml = `
+windows:
+  - id: w
+    type: cbtaker
+    size: { width: 5, height: 2 }
+    onPress: tap
+`;
+      builder.build(yaml, screen);
+      expect(resolved).toBe(spy);
+    });
+
+    it('auto-registers focusable custom controls with WindowManager', () => {
+      class FocusableBox extends Window {
+        public handleKey(_key: string): void { /* no-op */ }
+      }
+      builder.registerType('focusbox', (_node, ctx) => new FocusableBox(ctx.wp));
+      const wm = new WindowManager(screen);
+      const yaml = `
+windows:
+  - id: fb
+    type: focusbox
+    size: { width: 4, height: 2 }
+`;
+      const result = builder.build(yaml, screen, wm);
+      const fb = result.get('fb') as FocusableBox;
+      wm.setFocus(fb);
+      expect(wm.getFocused()).toBe(fb);
+    });
+
+    it('does not auto-register a non-focusable custom control', () => {
+      builder.registerType('passive', (_node, ctx) => new Window(ctx.wp));
+      const wm = new WindowManager(screen);
+      const yaml = `
+windows:
+  - id: p
+    type: passive
+    size: { width: 4, height: 2 }
+`;
+      const result = builder.build(yaml, screen, wm);
+      const p = result.get('p')!;
+      // Non-focusable control should not become focused after setFocus.
+      wm.setFocus(p as never);
+      expect(wm.getFocused()).toBeNull();
+    });
+
+    it('throws when trying to override a built-in type', () => {
+      expect(() => builder.registerType('button', (_node, ctx) => new Window(ctx.wp)))
+        .toThrow(/reserved/);
+    });
+
+    it('supports children under a custom type', () => {
+      class Container extends Window {
+        public childAt(i: number): Window | undefined { return this.children[i]; }
+      }
+      builder.registerType('container', (_node, ctx) => new Container(ctx.wp));
+      const yaml = `
+windows:
+  - id: outer
+    type: container
+    size: { width: 20, height: 10 }
+    children:
+      - id: inner
+        size: { width: 5, height: 3 }
+`;
+      const result = builder.build(yaml, screen);
+      const outer = result.get('outer') as Container;
+      const inner = result.get('inner')!;
+      expect(outer.childAt(0)).toBe(inner);
+    });
+  });
 });

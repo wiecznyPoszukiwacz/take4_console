@@ -120,4 +120,6 @@ export type {
 	YamlStyleDef,
 	YamlWindowDef,
 	YamlLayout,
+	CustomTypeContext,
+	CustomTypeFactory,
 } from './Screen/types.mjs';

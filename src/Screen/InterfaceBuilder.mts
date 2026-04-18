@@ -10,6 +10,8 @@ import type {
   StyleId,
   Focusable,
   WindowProperties,
+  CustomTypeFactory,
+  CustomTypeContext,
 } from './types.mjs';
 import { Window } from './Window.mjs';
 import { Screen } from './Screen.mjs';
@@ -34,6 +36,22 @@ import { Sparkline }    from './controls/Sparkline.mjs';
 import { Spinner }      from './controls/Spinner.mjs';
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/** Reserved `type:` tags owned by the built-in widget switch — custom factories
+ *  cannot override these. */
+/** Structural check: returns true when the window opts into keyboard input by
+ *  exposing `handleKey` (on top of the focus helpers inherited from Window).
+ *  Used to auto-register custom-type controls with WindowManager. */
+function isFocusable(win: Window): win is Focusable & Window {
+  const w = win as Partial<Focusable>;
+  return typeof w.handleKey === 'function';
+}
+
+const BUILTIN_TYPE_NAMES = new Set<string>([
+  'window', 'button', 'textbox', 'textarea', 'checkbox', 'radio',
+  'statusled', 'progressbar', 'progressbarv', 'linechart', 'barchart',
+  'listbox', 'tabs', 'sparkline', 'spinner',
+]);
 
 /** A focusable control with its resolved parent chain, queued for WM registration. */
 interface PendingRegistration {
@@ -130,9 +148,11 @@ function resolveBackground(bg: string | number | undefined): StyleId | undefined
  *
  * Usage:
  *   1. Create an InterfaceBuilder and call registerCallback() for any onPress/onChange IDs.
- *   2. Call build(yamlText, screen) or buildFromFile(path, screen).
- *   3. Optionally pass a WindowManager to automatically register all focusable controls.
- *   4. The returned Map<string, Window> gives access to windows by their YAML id.
+ *   2. Optionally call registerType(name, factory) to teach the builder about
+ *      user-defined controls addressable via `type: <name>` in YAML.
+ *   3. Call build(yamlText, screen) or buildFromFile(path, screen).
+ *   4. Optionally pass a WindowManager to automatically register all focusable controls.
+ *   5. The returned Map<string, Window> gives access to windows by their YAML id.
  *
  * YAML schema:
  *   windows:
@@ -146,16 +166,31 @@ function resolveBackground(bg: string | number | undefined): StyleId | undefined
  *         - ...
  */
 export class InterfaceBuilder {
-  private callbacks: Map<string, (...args: unknown[]) => void>;
+  private callbacks:   Map<string, (...args: unknown[]) => void>;
+  private customTypes: Map<string, CustomTypeFactory>;
 
-  /** Creates an InterfaceBuilder with an empty callback registry. */
+  /** Creates an InterfaceBuilder with empty callback and custom-type registries. */
   public constructor() {
-    this.callbacks = new Map();
+    this.callbacks   = new Map();
+    this.customTypes = new Map();
   }
 
   /** Registers a named callback for use with onPress or onChange in YAML definitions. */
   public registerCallback(id: string, fn: (...args: unknown[]) => void): void {
     this.callbacks.set(id, fn);
+  }
+
+  /** Registers a custom control factory addressable by `type: <name>` in YAML.
+   *  The factory receives the raw YAML node plus a context with pre-resolved
+   *  `wp` (WindowProperties), the style registry, and a callback resolver.
+   *  Custom names cannot override a built-in type tag. If the returned window
+   *  implements Focusable, it is auto-registered with WindowManager (when one
+   *  is supplied to `build()`). */
+  public registerType(name: string, factory: CustomTypeFactory): void {
+    if (BUILTIN_TYPE_NAMES.has(name)) {
+      throw new Error(`Cannot register custom type "${name}": name is reserved by a built-in type.`);
+    }
+    this.customTypes.set(name, factory);
   }
 
   /** Builds the UI from a YAML string, adds all top-level windows to Screen,
@@ -416,8 +451,21 @@ export class InterfaceBuilder {
       }
 
       default: {
-        wp.size = wp.size ?? this.requireSize(def);
-        win = new Window(wp);
+        const customFactory = def.type ? this.customTypes.get(def.type) : undefined;
+        if (customFactory) {
+          const ctx: CustomTypeContext = {
+            wp,
+            registry:        getRegistry(),
+            resolveCallback: (id) => (id ? this.callbacks.get(id) : undefined),
+          };
+          win = customFactory(def, ctx);
+          if (isFocusable(win)) {
+            pending.push({ control: win as Focusable & Window, parents: [...parentChain] });
+          }
+        } else {
+          wp.size = wp.size ?? this.requireSize(def);
+          win = new Window(wp);
+        }
         break;
       }
     }
