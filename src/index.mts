@@ -40,6 +40,7 @@ export { LineChart }      from './Screen/controls/LineChart.mjs';
 export { BarChart }       from './Screen/controls/BarChart.mjs';
 export { Sparkline }      from './Screen/controls/Sparkline.mjs';
 export { Spinner }        from './Screen/controls/Spinner.mjs';
+export { Toast }          from './Screen/controls/Toast.mjs';
 
 // ── YAML layout builder ───────────────────────────────────────────────────────
 export { InterfaceBuilder } from './Screen/InterfaceBuilder.mjs';
@@ -60,6 +61,7 @@ export {
 	BUILTIN_TEXT_CHECKED,
 	BUILTIN_CURSOR,
 	BUILTIN_TEXT_SELECTION,
+	BUILTIN_TOAST,
 } from './Screen/types.mjs';
 
 // ── Public type exports ───────────────────────────────────────────────────────
@@ -110,6 +112,8 @@ export type {
 	TabsProperties,
 	SparklineProperties,
 	SpinnerProperties,
+	ToastPosition,
+	ToastOptions,
 
 	// Focus & input
 	Focusable,

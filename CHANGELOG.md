@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.30.0] – 2026-04-18
+
+### Added — backlog P1-27 (Toast / Notification overlay)
+- **`Screen.toast(text, options?)`** — non-modal overlay anchored do
+  jednego z sześciu rogów (`top-left` / `top-center` / `top-right` /
+  `bottom-left` / `bottom-center` / `bottom-right`). Zwraca instancję
+  `Toast` (`Window` subclass) z metodami `getMessage()`,
+  `getToastPosition()`, `getToastStyle()`, `dismiss()`.
+- **Auto-dismiss + sticky** — `duration` w `ToastOptions` (default `2000`
+  ms); `0` oznacza sticky toast usuwany tylko ręcznie. Timery są
+  `unref()`-owane, a `Screen.dispose()` czyści je zanim wyłączy terminal.
+- **Stacking + reflow** — toasty z tej samej pozycji stackują się w
+  kolejności utworzenia; dismiss reflow-uje pozostałe w stronę kotwicy
+  przez `relayoutToasts`. `Screen.resize()` woła `relayoutAllToasts()`
+  przed emisją `'resize'`, więc SIGWINCH przenosi overlaye na nowe
+  rogi.
+- **`Screen.dismissToast(toast)` / `getActiveToasts(position?)`** —
+  publiczny API do manualnego usuwania i diagnostyki.
+- **`BUILTIN_TOAST`** — nowy built-in style (`{ background: 24,
+  foreground: 231, bold: true }`) rejestrowany przez `StyleRegistry`
+  konstruktor; user może nadpisać przez `Screen.setBuiltinStyle(BUILTIN_TOAST, …)`
+  lub przekazać własne `style` per call.
+- **Typy publiczne** — `Toast`, `ToastPosition`, `ToastOptions`,
+  `BUILTIN_TOAST` eksportowane z `src/index.mts`.
+- **Demo + bindingi** — `Ctrl+T` pokazuje 2.5-sekundowy top-right toast z
+  numerkiem i timestampem (stackuje się przy szybkim klikaniu),
+  `Ctrl+Y` pokazuje/ukrywa sticky bottom-right toast z `onDismiss`.
+- **Doc** — `doc/p1-27-toast.md` opisuje API, algorytm placementu,
+  cykl życia i backwards compatibility.
+- **Testy** — `tests/controls/Toast.test.mts` (18 testów: placement w
+  każdym rogu, stacking, reflow po dismiss, auto-dismiss, sticky,
+  manual dismiss, resize reanchor, styl default/custom, zIndex 10 000,
+  double-dismiss no-op).
+
 ## [0.29.0] – 2026-04-18
 
 ### Added — backlog P1-16 (margin dookoła okna)

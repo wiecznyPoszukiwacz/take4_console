@@ -405,6 +405,32 @@ const main = async (): Promise<void> => {
 		list.setItems([entry, ...list.getItems()].slice(0, 20));
 	});
 
+	// P1-27 demo: Ctrl+T pops a short-lived top-right toast so the overlay
+	// subsystem is visible at runtime. Repeated presses stack vertically and
+	// auto-dismiss in the same order. Ctrl+Y fires a sticky bottom-right toast
+	// that can only be cleared via its own dismiss button (`Enter` on focus)
+	// — here we close it on the next press to keep the demo self-contained.
+	let toastCounter = 0;
+	let stickyToast: ReturnType<typeof screen.toast> | null = null;
+	wm.bindKey('ctrl+t', () => {
+		toastCounter += 1;
+		screen.toast(` Saved #${toastCounter} at ${timestamp()} `, { duration: 2500 });
+		return true;
+	});
+	wm.bindKey('ctrl+y', () => {
+		if (stickyToast) {
+			stickyToast.dismiss();
+			stickyToast = null;
+		} else {
+			stickyToast = screen.toast(' Sticky: press Ctrl+Y again to dismiss ', {
+				position: 'bottom-right',
+				duration: 0,
+				onDismiss: () => { stickyToast = null; },
+			});
+		}
+		return true;
+	});
+
 	wm.bindKey('ctrl+e', () => {
 		wm.pause({ leaveAltScreen: true });
 		process.stdout.write('\n--- paused take4_console TUI. Press Enter to return ---\n');

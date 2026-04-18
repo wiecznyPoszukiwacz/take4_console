@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events';
-import type { CellAttributes, ScreenFrameStats, ScreenOptions, StyleId, TerminalSize } from './types.mjs';
+import type { CellAttributes, ScreenFrameStats, ScreenOptions, StyleId, TerminalSize, ToastOptions, ToastPosition } from './types.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
 import { getRegistry, setRegistry } from './RegistryHolder.mjs';
 import { Window } from './Window.mjs';
 import { Pos } from './Pos.mjs';
 import { Size } from './Size.mjs';
+import { Toast } from './controls/Toast.mjs';
 
 /** ANSI control sequences for the terminal lifecycle features owned by Screen. */
 const ENTER_ALT_SCREEN = '\x1b[?1049h';
@@ -30,6 +31,18 @@ export class Screen extends Window {
 	private signalsInstalled: boolean;
 	/** Whether dispose() has already restored terminal state. */
 	private disposed: boolean;
+	/** Active toast overlays grouped by anchor position. Within each group the
+	 *  toasts are stored in the order they were created so re-layout can stack
+	 *  them outward from the anchor edge. A toast is removed from its group by
+	 *  `dismissToast` (auto-dismiss timer) or by `Toast.dismiss()`. */
+	private activeToasts: Map<ToastPosition, Toast[]>;
+	/** Per-toast auto-dismiss timers. `dismissToast` consults this map so
+	 *  manual dismissals cancel the pending timer and leaking timers are
+	 *  impossible when the caller drops their reference to the toast. */
+	private toastTimers: Map<Toast, ReturnType<typeof setTimeout>>;
+	/** Per-toast dismiss callbacks (from `ToastOptions.onDismiss`). Kept out of
+	 *  the `Toast` instance so the control stays free of bookkeeping code. */
+	private toastDismissHandlers: Map<Toast, () => void>;
 
 	/** Initializes the root window sized to the current terminal dimensions.
 	 *  Creates a fresh StyleRegistry (with built-in styles pre-registered)
@@ -52,6 +65,9 @@ export class Screen extends Window {
 		this.boundExit        = (): void => { this.restoreTerminalState(); };
 		this.signalsInstalled = false;
 		this.disposed         = false;
+		this.activeToasts        = new Map();
+		this.toastTimers         = new Map();
+		this.toastDismissHandlers = new Map();
 
 		if (options?.altScreen)  this.enterAltScreen();
 		if (options?.hideCursor) this.hideHardwareCursor();
@@ -77,6 +93,146 @@ export class Screen extends Window {
 	/** Returns the soft FPS cap configured via ScreenOptions, or undefined when uncapped. */
 	public getTargetFps(): number | undefined {
 		return this.targetFps;
+	}
+
+	// ── Toast overlays (P1-27) ────────────────────────────────────────────────
+
+	/** Shows a non-modal toast overlay with the given text. Returns the
+	 *  underlying `Toast` window so callers can inspect it, swap its message,
+	 *  or dismiss it manually via `toast.dismiss()`.
+	 *
+	 *  Toasts are stacked by anchor: every call at the same `position` adds
+	 *  to the visible column, and a dismissal shifts the remainder back
+	 *  towards the anchor edge. Auto-dismissal is driven by a `setTimeout`
+	 *  whose handle is tracked per-toast so manual dismissals cancel the
+	 *  timer. A duration of `0` disables the timer entirely (sticky toast).
+	 *
+	 *  The method calls `render()` once so the overlay appears immediately,
+	 *  and again after every dismissal for the same reason. Consumers
+	 *  driving their own render loop can call `screen.render()` themselves —
+	 *  the extra render here is idempotent against the `'frame'` event. */
+	public toast(text: string, options?: ToastOptions): Toast {
+		const position = options?.position ?? 'top-right';
+		const duration = options?.duration ?? 2000;
+		const zIndex   = options?.zIndex   ?? 10_000;
+		const border   = options?.border   ?? { top: true, right: true, bottom: true, left: true, style: 'rounded' };
+		const style    = options?.style    ?? Toast.resolveDefaultStyle();
+		const width    = options?.width;
+
+		const toast = new Toast(text, { position, style, border, zIndex, width });
+		toast.attachDismiss(() => this.dismissToast(toast));
+
+		const list = this.activeToasts.get(position) ?? [];
+		list.push(toast);
+		this.activeToasts.set(position, list);
+
+		this.addChild(toast);
+		this.relayoutToasts(position);
+
+		if (duration > 0) {
+			const timer = setTimeout(() => this.dismissToast(toast), duration);
+			if (typeof timer === 'object' && timer !== null && 'unref' in timer && typeof timer.unref === 'function') {
+				timer.unref();
+			}
+			this.toastTimers.set(toast, timer);
+		}
+
+		if (options?.onDismiss) this.toastDismissHandlers.set(toast, options.onDismiss);
+
+		this.render();
+		return toast;
+	}
+
+	/** Removes a toast from the Screen, cancels its auto-dismiss timer (if
+	 *  any), reflows the remaining toasts anchored to the same corner, and
+	 *  fires the `onDismiss` callback the caller registered at creation
+	 *  time. Safe to call twice — the second call is a no-op. */
+	public dismissToast(toast: Toast): void {
+		const position = toast.getToastPosition();
+		const list = this.activeToasts.get(position);
+		if (!list) return;
+		const idx = list.indexOf(toast);
+		if (idx === -1) return;
+		list.splice(idx, 1);
+
+		const timer = this.toastTimers.get(toast);
+		if (timer !== undefined) {
+			clearTimeout(timer);
+			this.toastTimers.delete(toast);
+		}
+
+		this.removeChild(toast);
+		this.relayoutToasts(position);
+
+		const handler = this.toastDismissHandlers.get(toast);
+		if (handler) {
+			this.toastDismissHandlers.delete(toast);
+			handler();
+		}
+
+		this.render();
+	}
+
+	/** Returns a snapshot of the currently active toasts for the given anchor
+	 *  position (or every anchor when `position` is omitted). Exposed for
+	 *  tests and diagnostics — consumers generally keep the instance returned
+	 *  by `toast()` rather than walking this list. */
+	public getActiveToasts(position?: ToastPosition): readonly Toast[] {
+		if (position !== undefined) {
+			return [...(this.activeToasts.get(position) ?? [])];
+		}
+		const all: Toast[] = [];
+		for (const list of this.activeToasts.values()) all.push(...list);
+		return all;
+	}
+
+	/** Computes each toast's absolute position inside the Screen for the
+	 *  given anchor group and writes it to the toast's `x` / `y`. Called
+	 *  after every `addChild` / `removeChild` toast mutation and whenever
+	 *  the Screen is resized so the stack stays anchored. Mutates `x` / `y`
+	 *  directly — the Toast's `Pos.topLeft()` is only a placeholder consumed
+	 *  by the absolute layout pass that ran during `addChild`. */
+	private relayoutToasts(position: ToastPosition): void {
+		const list = this.activeToasts.get(position);
+		if (!list || list.length === 0) return;
+		const { width: screenW, height: screenH } = this.getSize();
+
+		const horizontalAnchor: 'left' | 'center' | 'right' =
+			position.endsWith('left')   ? 'left'   :
+			position.endsWith('right')  ? 'right'  :
+			                              'center';
+		const verticalAnchor: 'top' | 'bottom' =
+			position.startsWith('top') ? 'top' : 'bottom';
+
+		let offset = 0;
+		for (const toast of list) {
+			const { width: tw, height: th } = toast.getSize();
+
+			let x: number;
+			if (horizontalAnchor === 'left')       x = 0;
+			else if (horizontalAnchor === 'right') x = Math.max(0, screenW - tw);
+			else                                   x = Math.max(0, Math.floor((screenW - tw) / 2));
+
+			let y: number;
+			if (verticalAnchor === 'top') {
+				y = offset;
+			} else {
+				y = Math.max(0, screenH - offset - th);
+			}
+			offset += th;
+
+			toast.x = x;
+			toast.y = y;
+		}
+	}
+
+	/** Re-runs `relayoutToasts` for every non-empty anchor group. Invoked
+	 *  from `resize()` so terminal resizes keep the overlays pinned to their
+	 *  corners. */
+	private relayoutAllToasts(): void {
+		for (const position of this.activeToasts.keys()) {
+			this.relayoutToasts(position);
+		}
 	}
 
 	// ── Terminal lifecycle helpers ────────────────────────────────────────────
@@ -127,6 +283,12 @@ export class Screen extends Window {
 	 *  call from both deliberate teardown and a process 'exit' handler. */
 	public dispose(): void {
 		if (this.disposed) return;
+		// Cancel every pending auto-dismiss timer so a disposed Screen does
+		// not hold the Node event loop open via a detached setTimeout.
+		for (const timer of this.toastTimers.values()) clearTimeout(timer);
+		this.toastTimers.clear();
+		this.toastDismissHandlers.clear();
+		this.activeToasts.clear();
 		this.restoreTerminalState();
 		this.uninstallSignalHandlers();
 		this.disposed = true;
@@ -143,6 +305,9 @@ export class Screen extends Window {
 		const w = width  ?? process.stdout.columns ?? 80;
 		const h = height ?? process.stdout.rows    ?? 24;
 		this.setSize(w, h);
+		// Re-anchor every active toast overlay so corner-positioned stacks
+		// follow the new terminal geometry rather than drifting out of view.
+		this.relayoutAllToasts();
 		const size: TerminalSize = { width: w, height: h };
 		this.events.emit('resize', size);
 		return size;

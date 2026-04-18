@@ -11,6 +11,7 @@ import {
 	BUILTIN_TEXT_CHECKED,
 	BUILTIN_CURSOR,
 	BUILTIN_TEXT_SELECTION,
+	BUILTIN_TOAST,
 } from './types.mjs';
 
 /** Central registry that maps integer style IDs to CellAttributes objects.
@@ -36,6 +37,7 @@ export class StyleRegistry {
 		this.registerNamed(BUILTIN_TEXT_CHECKED,     { foreground: 76, bold: true });
 		this.registerNamed(BUILTIN_CURSOR,           { inverse: true });
 		this.registerNamed(BUILTIN_TEXT_SELECTION,   { background: 24, foreground: 231 });
+		this.registerNamed(BUILTIN_TOAST,            { background: 24, foreground: 231, bold: true });
 	}
 
 	/** Registers a CellAttributes object and returns its stable ID.

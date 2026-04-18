@@ -31,6 +31,11 @@ export const BUILTIN_CURSOR             = 'builtin:cursor';
 /** Name of the selection highlight style merged over selected cells in
  *  `TextBox` / `TextArea` (backlog P1-20). */
 export const BUILTIN_TEXT_SELECTION     = 'builtin:text-selection';
+/** Name of the default background + text style used by `Screen.toast()`
+ *  overlay windows (backlog P1-27). Consumers can override it via
+ *  `Screen.setBuiltinStyle(BUILTIN_TOAST, …)` to recolour every toast at
+ *  once without threading a per-call `style` option. */
+export const BUILTIN_TOAST              = 'builtin:toast';
 
 // ── Virtual cursor ────────────────────────────────────────────────────────────
 
@@ -545,6 +550,43 @@ export interface SpinnerProperties {
   running?: boolean;
   /** ANSI color number for the spinner glyph. Default: 75. */
   color?: number;
+}
+
+/** Corner (or top/bottom centre) where `Screen.toast()` anchors its overlay
+ *  windows. Toasts launched at the same position stack vertically in the
+ *  order they were created; a dismissal shifts the remaining stack towards
+ *  the anchor edge so the UI stays compact. */
+export type ToastPosition =
+  | 'top-left'    | 'top-center'    | 'top-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+/** Options accepted by `Screen.toast()`. All fields are optional; sensible
+ *  defaults make `screen.toast('Saved!')` a single-call notification. */
+export interface ToastOptions {
+  /** Auto-dismiss delay in milliseconds. Pass `0` to keep the toast sticky
+   *  until `toast.dismiss()` is called manually. Default: `2000`. */
+  duration?: number;
+  /** Pre-registered style ID used as both the window background and the
+   *  text style. Default: `BUILTIN_TOAST` (falls back to a high-contrast
+   *  style registered on first use). */
+  style?: StyleId;
+  /** Corner (or top/bottom centre) the toast anchors to. Default:
+   *  `'top-right'`. */
+  position?: ToastPosition;
+  /** Border configuration. Pass `false` for a borderless toast. Default:
+   *  a rounded single-line border on all four sides. */
+  border?: WindowBorder | boolean;
+  /** Stacking order among Screen children. Default: `10_000` so toasts
+   *  draw on top of every regular window without callers having to raise
+   *  other `zIndex` values by hand. */
+  zIndex?: number;
+  /** Override the automatic text-based width (in cells, not counting the
+   *  border). When the text is wider than this value it overflows
+   *  normally — toasts never wrap. Default: `undefined` (auto-size). */
+  width?: number;
+  /** Fires once after the toast has been removed from the Screen
+   *  (auto-dismiss or manual). */
+  onDismiss?: () => void;
 }
 
 /** Control-specific properties for the BarChart control. */

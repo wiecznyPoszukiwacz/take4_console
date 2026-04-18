@@ -200,6 +200,7 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 2      | P1-23 | Error boundary                          | 0.26.0  | ✅ done (2026-04-18) |
 | 2      | P1-20 | Selection w TextBox / TextArea          | 0.28.0  | ✅ done (2026-04-18) |
 | 2      | P1-16 | Padding/margin (margin dopiął P0-3)     | 0.29.0  | ✅ done (2026-04-18) |
+| 3      | P1-27 | Built-in Toast / Notification           | 0.30.0  | ✅ done (2026-04-18) |
 
 Pozostałe P1 / P2 itemy są trackowane w `doc/take4-console-backlog.md` i
 dopisane zostaną tu w miarę lądowania.
@@ -216,4 +217,9 @@ doc/p1-20-selection.md. 0.29.0 zamyka P1-16: `margin` na każdym
 `Window` (resolver + pole + getter), obsługa w `layoutAbsolute` /
 `layoutFlex` / `layoutGrid`, przekazanie przez `InterfaceBuilder`;
 przycisk „Save" w demie dostał `margin: { left: 2 }` — doc/p1-16-padding-margin.md.
-Następny batch: do wyboru przez użytkownika.
+0.30.0 zamyka P1-27: `Screen.toast(text, options?)` + klasa `Toast`
+(non-modal overlay, sześć rogów, stacking, auto-dismiss z `unref()`-em,
+sticky `duration: 0`, `BUILTIN_TOAST` styl, reanchor po `Screen.resize()`);
+demo: `Ctrl+T` stackuje top-right toasty, `Ctrl+Y` przełącza sticky
+bottom-right — doc/p1-27-toast.md. Następny batch: do wyboru przez
+użytkownika.
