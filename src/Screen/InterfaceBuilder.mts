@@ -269,6 +269,8 @@ export class InterfaceBuilder {
       gridColumns:    def.gridColumns,
       alignItems:     def.alignItems,
       justifyContent: def.justifyContent,
+      id:             def.id,
+      zIndex:         def.zIndex,
     };
 
     let win: Window;

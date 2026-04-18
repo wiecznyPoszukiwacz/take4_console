@@ -3,6 +3,7 @@ import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORD
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
 import { getRegistry } from './RegistryHolder.mjs';
+import { getErrorHandler } from './ErrorHolder.mjs';
 import { charWidth, stringWidth } from './textWidth.mjs';
 import type { Pos } from './Pos.mjs';
 import { Size } from './Size.mjs';
@@ -125,6 +126,15 @@ export class Window {
 	private alignItems: AlignItems;
 	/** Main-axis distribution of leftover space when no flex-grow child consumes it. */
 	private justifyContent: JustifyContent;
+	/** Optional identifier — copied from WindowProperties.id. Used by
+	 *  `WindowManager.focusById` and by diagnostic tooling. */
+	private id: string | undefined;
+	/** Stacking order among siblings (higher z renders on top). Default: 0. */
+	private zIndex: number;
+	/** Fires once when focused state flips from false to true. */
+	private onFocusHandler: (() => void) | undefined;
+	/** Fires once when focused state flips from true to false. */
+	private onBlurHandler: (() => void) | undefined;
 
 	/** Creates a window from the given properties.
 	 *  For percentage-based sizes, call addChild() before writing content to the window.
@@ -153,6 +163,10 @@ export class Window {
 		this.gridColumns    = Math.max(1, wp.gridColumns ?? 1);
 		this.alignItems     = wp.alignItems     ?? 'stretch';
 		this.justifyContent = wp.justifyContent ?? 'start';
+		this.id             = wp.id;
+		this.zIndex         = wp.zIndex ?? 0;
+		this.onFocusHandler = wp.onFocus;
+		this.onBlurHandler  = wp.onBlur;
 
 		const { w, h } = size.isAbsolute() ? size.resolve(0, 0) : { w: 1, h: 1 };
 		this.region  = new Region(w, h);
@@ -221,9 +235,58 @@ export class Window {
 		this.active = active;
 	}
 
-	/** Sets the focused state. Controls use this to change visual appearance on focus. */
+	/** Sets the focused state. Controls use this to change visual appearance on focus.
+	 *  Fires `onFocus` / `onBlur` (configured via `WindowProperties`) when the state
+	 *  actually changes; a no-op call with the current value does not re-fire them. */
 	public setFocused(focused: boolean): void {
+		if (this.focused === focused) return;
 		this.focused = focused;
+		if (focused) this.onFocusHandler?.();
+		else         this.onBlurHandler?.();
+	}
+
+	/** Registers (or replaces) the onFocus handler at runtime. Pass `undefined`
+	 *  to detach. Fires in `setFocused` on every false → true transition. */
+	public setOnFocus(handler: (() => void) | undefined): void {
+		this.onFocusHandler = handler;
+	}
+
+	/** Registers (or replaces) the onBlur handler at runtime. Pass `undefined`
+	 *  to detach. Fires in `setFocused` on every true → false transition. */
+	public setOnBlur(handler: (() => void) | undefined): void {
+		this.onBlurHandler = handler;
+	}
+
+	/** Returns the optional identifier set via WindowProperties.id. */
+	public getId(): string | undefined {
+		return this.id;
+	}
+
+	/** Sets (or clears with `undefined`) the window identifier used by
+	 *  `WindowManager.focusById` and diagnostic tooling. */
+	public setId(id: string | undefined): void {
+		this.id = id;
+	}
+
+	/** Returns the current stacking order. Higher values render on top of
+	 *  lower ones among siblings. Default: 0. */
+	public getZIndex(): number {
+		return this.zIndex;
+	}
+
+	/** Updates the stacking order. Siblings are re-sorted on the next render()
+	 *  call; call `screen.render()` (or the surrounding window) to see the
+	 *  change. Does not affect layout (flex/absolute coordinates are
+	 *  independent of z). */
+	public setZIndex(zIndex: number): void {
+		this.zIndex = zIndex;
+	}
+
+	/** Returns the direct children of this window in insertion order (a
+	 *  read-only view). WindowManager uses this to walk subtrees for
+	 *  `trapFocus` and `focusById` without exposing the internal array. */
+	public getChildren(): readonly Window[] {
+		return this.children;
 	}
 
 	/** Returns whether this window currently has keyboard focus. */
@@ -478,10 +541,53 @@ export class Window {
 		this.paintBackground();
 		this.blitContent();
 		this.paintBorder();
-		for (const child of this.children) {
+		for (const child of this.orderedByZ()) {
 			if (!child.visible) continue;
-			child.render();
+			try {
+				child.render();
+				this.blitChild(child);
+			} catch (err) {
+				this.paintErrorPlaceholder(child, err);
+				const handler = getErrorHandler();
+				if (handler) handler(err, child);
+				else         throw err;
+			}
+		}
+	}
+
+	/** Returns direct children sorted for rendering — stable by (zIndex asc,
+	 *  insertion order). Children with higher zIndex paint last, so they
+	 *  appear on top of lower-z siblings. Layout is NOT affected: flex and
+	 *  absolute positioning run off the insertion-ordered `children` list. */
+	private orderedByZ(): Window[] {
+		if (this.children.length < 2) return this.children;
+		const stable = this.children.map((child, idx) => ({ child, idx }));
+		stable.sort((a, b) => (a.child.zIndex - b.child.zIndex) || (a.idx - b.idx));
+		return stable.map(e => e.child);
+	}
+
+	/** Renders a single-line "⚠ render error" marker over the child's
+	 *  pre-allocated region so a broken subtree never blanks the rest of the
+	 *  frame. The child is still blitted onto this window so its geometry
+	 *  (borders, siblings) remains visible in the debug layout. */
+	private paintErrorPlaceholder(child: Window, err: unknown): void {
+		const { width, height } = child.getSize();
+		if (width === 0 || height === 0) return;
+		const styleId = this.registry.register({ foreground: 196, background: 52, bold: true });
+		try {
+			child.region = new Region(width, height);
+			child.region.fill(' ', styleId);
+			const message = err instanceof Error ? err.message : String(err);
+			const prefix = '⚠ render error: ';
+			const maxLen = Math.max(0, width - prefix.length);
+			const text = prefix + message.slice(0, maxLen);
+			const chars = [...text];
+			for (let i = 0; i < chars.length && i < width; i++) {
+				child.region.setCell(i, 0, chars[i]!, styleId);
+			}
 			this.blitChild(child);
+		} catch {
+			// Swallow — the placeholder itself must not throw further.
 		}
 	}
 

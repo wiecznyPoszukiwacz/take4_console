@@ -7,6 +7,7 @@ import type {
 } from './types.mjs';
 import { Screen } from './Screen.mjs';
 import { Window } from './Window.mjs';
+import { setErrorHandler } from './ErrorHolder.mjs';
 
 // ── Internal types ────────────────────────────────────────────────────────────
 
@@ -182,6 +183,15 @@ export class WindowManager {
 	private onKey?: (key: string, ctx: KeyContext) => boolean | void;
 	private onMouse?: (event: TerminalMouseEvent) => void;
 	private mouseEnabled: boolean;
+	/** Optional sink for render-time exceptions thrown by descendant windows.
+	 *  Installed into the global ErrorHolder on construction (cleared on
+	 *  stop). When unset, `Window.render()` rethrows instead of swallowing. */
+	private onError?: (err: unknown, control: Window) => void;
+	/** When non-null, focus navigation (`focusNext/Prev/First/Last`, Tab cycle)
+	 *  is constrained to focusable controls whose absolute position falls
+	 *  inside a descendant of this window. Set by `trapFocus`; cleared by the
+	 *  release callback it returns. */
+	private focusTrap: Window | null = null;
 
 	/** Registered bindings mapped by raw key string.
 	 *  Multiple handlers for the same key fire in insertion order; the first
@@ -222,6 +232,11 @@ export class WindowManager {
 		this.onKey        = options?.onKey;
 		this.onMouse      = options?.onMouse;
 		this.mouseEnabled = options?.mouse ?? false;
+		this.onError      = options?.onError;
+
+		if (this.onError) {
+			setErrorHandler((err, control) => this.onError?.(err, control));
+		}
 
 		this.mainEntries   = [];
 		this.mainFocusIndex = -1;
@@ -263,16 +278,84 @@ export class WindowManager {
 	}
 
 	/** Moves focus to the given control if it belongs to the active context and is
-	 *  eligible (not disabled, not hidden via setVisible(false)). */
+	 *  eligible (not disabled, not hidden via setVisible(false)). When a focus
+	 *  trap is installed, the candidate must also be a descendant of the trap
+	 *  — otherwise the call is a no-op. */
 	public setFocus(control: Focusable & Window): void {
 		const entries = this.activeEntries();
 		const idx     = entries.findIndex(e => e.control === control);
 		if (idx === -1) return;
 		const candidate = entries[idx].control;
 		if (candidate.isDisabled() || !candidate.isVisible()) return;
+		if (this.focusTrap && !this.isWithinTrap(candidate)) return;
 		this.blurCurrent();
 		this.setActiveFocusIndex(idx);
 		control.setFocused(true);
+	}
+
+	/** Moves focus to the next eligible control (forward cycle), skipping
+	 *  disabled, hidden, and out-of-trap entries. Equivalent to the Tab key. */
+	public focusNext(): void {
+		this.moveFocus(1);
+	}
+
+	/** Moves focus to the previous eligible control (reverse cycle), skipping
+	 *  disabled, hidden, and out-of-trap entries. Equivalent to Shift-Tab. */
+	public focusPrev(): void {
+		this.moveFocus(-1);
+	}
+
+	/** Focuses the first eligible control in the active context. No-op when
+	 *  no control is eligible. */
+	public focusFirst(): void {
+		this.focusAtEdge('first');
+	}
+
+	/** Focuses the last eligible control in the active context. */
+	public focusLast(): void {
+		this.focusAtEdge('last');
+	}
+
+	/** Focuses the control registered with the given `id` (copied from
+	 *  `WindowProperties.id` / YAML `id:`). Searches the active focus context
+	 *  only; returns `true` on success, `false` when no matching control is
+	 *  registered or the match is ineligible. */
+	public focusById(id: string): boolean {
+		const entries = this.activeEntries();
+		for (const entry of entries) {
+			if (entry.control.getId() !== id) continue;
+			if (!this.isFocusable(entry.control))        return false;
+			if (this.focusTrap && !this.isWithinTrap(entry.control)) return false;
+			this.blurCurrent();
+			this.setActiveFocusIndex(entries.indexOf(entry));
+			entry.control.setFocused(true);
+			return true;
+		}
+		return false;
+	}
+
+	/** Constrains focus navigation to descendants of `within`. While active,
+	 *  `focusNext / focusPrev / focusFirst / focusLast / setFocus / focusById`
+	 *  skip any control that is not a descendant of `within`; Tab / Shift-Tab
+	 *  cycle within the trapped subtree only. Nested calls stack in LIFO
+	 *  order via the returned release function — calling the release restores
+	 *  the previous trap (or clears it when this was the outermost). The
+	 *  helper is independent of the modal dialog stack, so it can be used
+	 *  for composite controls that live inside the main context. */
+	public trapFocus(within: Window): () => void {
+		const previous = this.focusTrap;
+		this.focusTrap = within;
+		return () => {
+			if (this.focusTrap === within) {
+				this.focusTrap = previous;
+			}
+		};
+	}
+
+	/** Returns the Window that currently defines the focus trap, or null when
+	 *  no trap is active. Exposed primarily for tests and diagnostics. */
+	public getFocusTrap(): Window | null {
+		return this.focusTrap;
 	}
 
 	// ── Global key bindings (P0-4) ─────────────────────────────────────────────
@@ -447,6 +530,8 @@ export class WindowManager {
 			this.pauseRestoreAltScreen    = false;
 			this.pauseRestoreCursorHidden = false;
 		}
+
+		if (this.onError) setErrorHandler(undefined);
 
 		this.onExit?.();
 	}
@@ -660,9 +745,48 @@ export class WindowManager {
 	}
 
 	/** Returns true when the control is eligible to receive focus in the current
-	 *  context — neither disabled nor hidden via `Window.setVisible(false)`. */
+	 *  context — neither disabled nor hidden via `Window.setVisible(false)`,
+	 *  and inside the active focus trap (if any). */
 	private isFocusable(control: Focusable & Window): boolean {
-		return !control.isDisabled() && control.isVisible();
+		if (control.isDisabled() || !control.isVisible()) return false;
+		if (this.focusTrap && !this.isWithinTrap(control)) return false;
+		return true;
+	}
+
+	/** Depth-first check: is `control` the trap window itself or one of its
+	 *  descendants? Used when `focusTrap` is installed to filter focus
+	 *  candidates. Cheaper than storing parent pointers because the subtree
+	 *  is usually small (the trap is a dialog or composite control). */
+	private isWithinTrap(control: Window): boolean {
+		if (!this.focusTrap) return true;
+		return this.isDescendant(control, this.focusTrap);
+	}
+
+	/** Returns true when `node` is `root` or is reachable by walking
+	 *  `root.getChildren()` recursively. */
+	private isDescendant(node: Window, root: Window): boolean {
+		if (node === root) return true;
+		for (const child of root.getChildren()) {
+			if (this.isDescendant(node, child)) return true;
+		}
+		return false;
+	}
+
+	/** Moves focus to the first or last eligible control in the active
+	 *  context. Shared implementation for `focusFirst` / `focusLast`. */
+	private focusAtEdge(edge: 'first' | 'last'): void {
+		const entries = this.activeEntries();
+		if (entries.length === 0) return;
+		const order = edge === 'first'
+			? entries.map((_, i) => i)
+			: entries.map((_, i) => entries.length - 1 - i);
+		for (const idx of order) {
+			if (!this.isFocusable(entries[idx]!.control)) continue;
+			this.blurCurrent();
+			this.setActiveFocusIndex(idx);
+			entries[idx]!.control.setFocused(true);
+			return;
+		}
 	}
 
 	/** Finds the first already-focused (or first eligible) control and focuses it. */

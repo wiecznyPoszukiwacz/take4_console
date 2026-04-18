@@ -177,6 +177,21 @@ export interface WindowProperties {
   /** Main-axis distribution of leftover space for `layout: 'row'` / `'column'`
    *  when no child consumes it via flex-grow. Default: 'start'. */
   justifyContent?: JustifyContent;
+  /** Optional string identifier used by `WindowManager.focusById` and for
+   *  diagnostics. InterfaceBuilder copies the YAML `id:` into this field so
+   *  the runtime can cross-reference programmatic focus with the builder map. */
+  id?: string;
+  /** Stacking order among siblings — windows with a higher `zIndex` render
+   *  on top of windows with a lower value. Ties are broken by `addChild`
+   *  insertion order, so the pre-0.26 behaviour (everything at `zIndex: 0`)
+   *  is preserved for callers that don't opt in. Default: 0. */
+  zIndex?: number;
+  /** Fires once when this window transitions from unfocused to focused, via
+   *  any code path (WindowManager, explicit `setFocused(true)`, focus
+   *  inheritance on dialog open). Not fired when the state does not change. */
+  onFocus?: () => void;
+  /** Fires once when this window transitions from focused to unfocused. */
+  onBlur?: () => void;
 }
 
 /** Internal per-axis position spec used by Pos.
@@ -629,6 +644,9 @@ export interface YamlWindowDef {
   /** Free-form property bag for user-registered custom types. Built-in types
    *  ignore this field; custom factories read it via `node.props`. */
   props?: Record<string, unknown>;
+  /** Stacking order among siblings. Higher values render on top; ties keep
+   *  YAML declaration order. Default: 0. */
+  zIndex?: number;
 }
 
 /** Context passed to factories registered via `InterfaceBuilder.registerType`.
@@ -718,4 +736,10 @@ export interface WindowManagerOptions {
   onMouse?: (event: TerminalMouseEvent) => void;
   /** Enable mouse click tracking (SGR protocol). Default: false. */
   mouse?: boolean;
+  /** Fires when a descendant Window throws during its `render()` call (or its
+   *  blit onto the parent). The offending subtree is replaced in-place with a
+   *  single-line error placeholder so the rest of the frame still paints;
+   *  the handler is invoked once per error with the thrown value and the
+   *  Window that produced it. Default: no-op. */
+  onError?: (err: unknown, control: Window) => void;
 }

@@ -1173,4 +1173,113 @@ describe('Window', () => {
       expect(parent.getCell(19, 0).char).toBe('R');
     });
   });
+
+  // ── zIndex (P1-17) ──────────────────────────────────────────────────────────
+  describe('zIndex / stacking order', () => {
+    beforeEach(() => setRegistry(new StyleRegistry()));
+
+    it('defaults zIndex to 0 and reports it via getZIndex()', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(5, 3) });
+      expect(w.getZIndex()).toBe(0);
+    });
+
+    it('higher zIndex sibling paints over a lower one at the overlap cell', () => {
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      const low  = new Window({ pos: new Pos(0, 0), size: new Size(6, 1), zIndex: 0 });
+      const high = new Window({ pos: new Pos(2, 0), size: new Size(6, 1), zIndex: 5 });
+      low.fill('L');
+      high.fill('H');
+      parent.addChild(low);
+      parent.addChild(high);
+      parent.render();
+      expect(parent.getCell(0, 0).char).toBe('L');
+      expect(parent.getCell(3, 0).char).toBe('H'); // inside overlap
+      expect(parent.getCell(7, 0).char).toBe('H');
+    });
+
+    it('insertion-later sibling wins when zIndex is tied', () => {
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(6, 1) });
+      const a = new Window({ pos: new Pos(0, 0), size: new Size(4, 1) });
+      const b = new Window({ pos: new Pos(2, 0), size: new Size(4, 1) });
+      a.fill('A');
+      b.fill('B');
+      parent.addChild(a);
+      parent.addChild(b);
+      parent.render();
+      expect(parent.getCell(3, 0).char).toBe('B');
+    });
+
+    it('setZIndex flips the stacking order at the next render()', () => {
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(6, 1) });
+      const a = new Window({ pos: new Pos(0, 0), size: new Size(4, 1) });
+      const b = new Window({ pos: new Pos(2, 0), size: new Size(4, 1) });
+      a.fill('A');
+      b.fill('B');
+      parent.addChild(a);
+      parent.addChild(b);
+      a.setZIndex(10);
+      parent.render();
+      expect(parent.getCell(3, 0).char).toBe('A');
+    });
+  });
+
+  // ── onFocus / onBlur (P1-22) ────────────────────────────────────────────────
+  describe('onFocus / onBlur hooks', () => {
+    beforeEach(() => setRegistry(new StyleRegistry()));
+
+    it('fires onFocus exactly once on false → true', () => {
+      let count = 0;
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(3, 1), onFocus: () => { count++; } });
+      w.setFocused(true);
+      w.setFocused(true);
+      expect(count).toBe(1);
+    });
+
+    it('fires onBlur on true → false and not on redundant calls', () => {
+      let blurs = 0;
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(3, 1), focused: true, onBlur: () => { blurs++; } });
+      w.setFocused(false);
+      w.setFocused(false);
+      expect(blurs).toBe(1);
+    });
+
+    it('setOnFocus installs a handler at runtime', () => {
+      let called = false;
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(3, 1) });
+      w.setOnFocus(() => { called = true; });
+      w.setFocused(true);
+      expect(called).toBe(true);
+    });
+  });
+
+  // ── Error boundary (P1-23) ─────────────────────────────────────────────────
+  describe('error boundary in render()', () => {
+    beforeEach(() => setRegistry(new StyleRegistry()));
+
+    it('re-throws when no global error handler is installed', () => {
+      const parent = new Window({ pos: new Pos(0, 0), size: new Size(10, 3) });
+      class Boom extends Window {
+        public override render(): void { throw new Error('boom'); }
+      }
+      const bad = new Boom({ pos: new Pos(0, 0), size: new Size(5, 1) });
+      parent.addChild(bad);
+      expect(() => parent.render()).toThrow(/boom/);
+    });
+  });
+
+  // ── id accessors ───────────────────────────────────────────────────────────
+  describe('id accessors', () => {
+    it('getId returns the value passed to WindowProperties.id', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(3, 1), id: 'hello' });
+      expect(w.getId()).toBe('hello');
+    });
+
+    it('setId changes the id at runtime', () => {
+      const w = new Window({ pos: new Pos(0, 0), size: new Size(3, 1) });
+      w.setId('foo');
+      expect(w.getId()).toBe('foo');
+      w.setId(undefined);
+      expect(w.getId()).toBeUndefined();
+    });
+  });
 });

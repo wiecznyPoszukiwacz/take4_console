@@ -194,10 +194,14 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 1      | P0-10 | InterfaceBuilder: register custom types | 0.25.0  | ✅ done (2026-04-18) |
 | 1      | P0-11 | Screen: alt-screen + hide-cursor opcja  | 0.19.0  | ✅ done (2026-04-16) |
 | 1      | P0-12 | SIGWINCH autoresize + event             | 0.19.0  | ✅ done (2026-04-16) |
+| 2      | P1-17 | Z-index i non-modal overlays            | 0.26.0  | ✅ done (2026-04-18) |
+| 2      | P1-18 | Focus management API                    | 0.26.0  | ✅ done (2026-04-18) |
+| 2      | P1-22 | onFocus / onBlur                        | 0.26.0  | ✅ done (2026-04-18) |
+| 2      | P1-23 | Error boundary                          | 0.26.0  | ✅ done (2026-04-18) |
 
-P1 / P2 items are tracked only in `doc/take4-console-backlog.md` until their
-sprint begins; they will be appended to this table as they land.
+Pozostałe P1 / P2 itemy są trackowane w `doc/take4-console-backlog.md` i
+dopisane zostaną tu w miarę lądowania.
 
-**Currently working on:** Sprint 1 (P0 — blokery migracji rpcoon). Next up:
-whichever P0-x the user calls out. Sprint 1 ends when all twelve P0 items
-ship — that unblocks the rpcoon migration.
+**Currently working on:** Sprint 2 (P1 — fundament DX). Sprint 1 zamknięty.
+Batch 0.26.0 dostarczył `WindowManager` DX (focus API + hooki + error
+boundary) razem z z-indexem. Następny batch: do wyboru przez użytkownika.

@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.26.0] – 2026-04-18
+
+### Added — backlog P1-17 (z-index / non-modal stacking)
+- **`WindowProperties.zIndex`** (+ `Window#getZIndex()` / `setZIndex()`) — stacking
+  order among siblings. Wyższa wartość rysuje się nad niższą; ties zachowują
+  kolejność wywołań `addChild()`. Layout (flex / absolute) pozostaje niezależny:
+  `runLayout()` nadal korzysta z kolejności wstawiania, a tylko pętla render()
+  sortuje dzieci po `(zIndex, idx)` do malowania i blitowania.
+- **YAML `zIndex:`** — pole dostępne na każdym węźle w `layout.yaml`; wartość
+  jest przekazywana do `WindowProperties.zIndex` przez `InterfaceBuilder`.
+
+### Added — backlog P1-18 (focus management API)
+- **`WindowManager#focusNext()` / `focusPrev()` / `focusFirst()` / `focusLast()`**
+  — programistyczne odpowiedniki Tab / Shift+Tab / skoku na pierwszy / ostatni
+  focusable kontrolek, uwzględniające disabled, hidden, focus-trap.
+- **`WindowManager#focusById(id)`** — przeszukuje aktywny kontekst (main stack
+  lub topmost dialog) po `Window#getId()` i ustawia focus na dopasowanym
+  kontrolerze; zwraca `true` przy sukcesie, `false` gdy brak matcha lub
+  kontrolka nie jest eligible.
+- **`WindowManager#trapFocus(within)`** — ogranicza nawigację (Tab / Shift+Tab /
+  focusNext itp.) i `setFocus` do descendantów wskazanego Window. Zwraca funkcję
+  zwalniającą; kolejne wywołania stackują się LIFO, `getFocusTrap()` zwraca
+  aktywny trap.
+- **`WindowProperties.id` + `Window#getId()` / `setId()`** — opcjonalny string
+  używany przez `focusById`; `InterfaceBuilder` kopiuje YAML `id:` do tego pola,
+  więc reference-matching działa identycznie jak dotychczasowa mapa zwracana
+  przez `build()`.
+
+### Added — backlog P1-22 (onFocus / onBlur hooks)
+- **`WindowProperties.onFocus` / `onBlur`** (+ `Window#setOnFocus()` /
+  `setOnBlur()`) — callbacki wyzwalane raz na zmianę stanu focus (`false → true`
+  dla onFocus, `true → false` dla onBlur). Idempotentne wywołania
+  `setFocused(…)` z bieżącą wartością nie re-odpalają handlerów.
+- Wyzwalane są przez dowolną ścieżkę ustawiającą focus: `WindowManager.setFocus`,
+  `moveFocus`, `focusById`, `focusFirst/Last`, ręczny `Window.setFocused(true)`.
+
+### Added — backlog P1-23 (error boundary in render)
+- **`WindowManagerOptions.onError(err, control)`** — globalny sink dla wyjątków
+  rzuconych podczas `Window.render()` któregoś z descendantów. Gdy handler jest
+  zarejestrowany, rodzic przechwytuje wyjątek, maluje placeholder `⚠ render
+  error: …` na obszarze winnego dziecka i kontynuuje renderowanie pozostałego
+  subtree — reszta klatki pozostaje sprawna.
+- **`ErrorHolder.mts`** — nowy moduł-holder analogiczny do `RegistryHolder`,
+  z ekspozycją `setErrorHandler(fn)` / `getErrorHandler()`. WindowManager
+  instaluje handler w konstruktorze i czyści go w `stop()`, więc poza pętlą
+  managera `Window.render()` nadal rethrowuje wyjątki (no silent swallowing).
+
+### Demo / layout.yaml
+- **z-index** — `buildBadge` dostał `zIndex: 10`, a nowy `headerOverlay` z
+  `zIndex: 1` dowodzi, że malowanie respektuje kolejność stackingu mimo
+  późniejszej deklaracji overlay-a.
+- **focusById** — `Ctrl+G` bindKey w `demo.mts` przerzuca focus na `btnSave`
+  bez Tab-owania przez wszystkie pola.
+- **onFocus / onBlur** — `btnSave.setOnFocus / setOnBlur` dopisują wpis do listy
+  zdarzeń przy każdej zmianie focus, dzięki czemu widać kiedy hooki wpadają.
+- **onError** — `WindowManager({ onError })` loguje do listy zdarzeń wszelkie
+  render-time wyjątki (z pokaźnym ostrzegawczym placeholderem w miejscu
+  zawodnej kontrolki).
+
+### Version bump
+- 0.25.0 → 0.26.0 — minor bump dla batcha P1-17/18/22/23.
+
 ## [0.25.0] – 2026-04-18
 
 ### Added — backlog P0-10 (InterfaceBuilder: register custom types)

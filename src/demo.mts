@@ -73,6 +73,18 @@ const main = async (): Promise<void> => {
 			process.exit(0);
 		},
 		mouse:    true,
+		// P1-23 demo: whenever a descendant Window.render() raises, append a
+		// red row to the events list instead of tearing down the TUI.
+		onError:  (err, control) => {
+			const list  = result.get('eventsList') as ListBox<EventRow>;
+			const entry: EventRow = {
+				timestamp: timestamp(),
+				level:     'error',
+				message:   `render fail (${control.getId() ?? 'unnamed'}): ${err instanceof Error ? err.message : String(err)}`,
+				count:     1,
+			};
+			list.setItems([entry, ...list.getItems()].slice(0, 20));
+		},
 	});
 
 	// 0.19.0: SIGWINCH autoresize. The Screen reflows percentage-based children
@@ -369,6 +381,29 @@ const main = async (): Promise<void> => {
 	// buffer, re-hides the cursor, re-enables mouse tracking, and re-renders
 	// the frame. The focus / dialog stack / key bindings stay intact across
 	// the cycle.
+	// P1-18 demo: Ctrl+G jumps focus to the  Save button via its YAML id,
+	// without the user having to Tab through every field in between.
+	wm.bindKey('ctrl+g', () => {
+		wm.focusById('btnSave');
+		screen.render();
+		return true;
+	});
+
+	// P1-22 demo: observe focus transitions on btnSave without subclassing —
+	// the hooks append a short trail to the events list so the user can see
+	// exactly when setFocus fires them.
+	const btnSave = result.get('btnSave')!;
+	btnSave.setOnFocus(() => {
+		const list = result.get('eventsList') as ListBox<EventRow>;
+		const entry: EventRow = { timestamp: timestamp(), level: 'ok', message: 'btnSave → focus', count: 1 };
+		list.setItems([entry, ...list.getItems()].slice(0, 20));
+	});
+	btnSave.setOnBlur(() => {
+		const list = result.get('eventsList') as ListBox<EventRow>;
+		const entry: EventRow = { timestamp: timestamp(), level: 'warn', message: 'btnSave → blur', count: 1 };
+		list.setItems([entry, ...list.getItems()].slice(0, 20));
+	});
+
 	wm.bindKey('ctrl+e', () => {
 		wm.pause({ leaveAltScreen: true });
 		process.stdout.write('\n--- paused take4_console TUI. Press Enter to return ---\n');

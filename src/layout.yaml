@@ -17,9 +17,19 @@ windows:
         type: badge
         pos: { x: 18, y: 0 }
         size: { width: 10, height: 1 }
+        # P1-17 demo: painted after its siblings thanks to the higher zIndex,
+        # so any overlapping overlay child below zIndex 10 stays underneath.
+        zIndex: 10
         props:
           text: "P0-10 "
           color: 220
+      - id: headerOverlay
+        pos: { x: 15, y: 0 }
+        size: { width: 16, height: 1 }
+        background: 52
+        # P1-17 demo: sits behind buildBadge even though declared later — the
+        # Window.render loop sorts siblings by (zIndex asc, insertion order).
+        zIndex: 1
 
   - id: statusBar
     pos: { preset: bottom }

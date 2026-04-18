@@ -830,4 +830,159 @@ describe('WindowManager', () => {
 			expect(() => parent.removeChild(other)).not.toThrow();
 		});
 	});
+
+	// ── Focus management API (P1-18) ──────────────────────────────────────────
+	describe('focus management API', () => {
+		it('focusNext / focusPrev cycle through registered controls', () => {
+			const a = makeButton('a');
+			const b = makeButton('b');
+			const c = makeButton('c');
+			wm.register(a); wm.register(b); wm.register(c);
+
+			wm.focusFirst();
+			expect(wm.getFocused()).toBe(a);
+			wm.focusNext();
+			expect(wm.getFocused()).toBe(b);
+			wm.focusNext();
+			expect(wm.getFocused()).toBe(c);
+			wm.focusNext();
+			expect(wm.getFocused()).toBe(a);
+			wm.focusPrev();
+			expect(wm.getFocused()).toBe(c);
+		});
+
+		it('focusLast jumps to the last eligible control', () => {
+			const a = makeButton('a');
+			const b = makeButton('b');
+			wm.register(a); wm.register(b);
+			wm.focusLast();
+			expect(wm.getFocused()).toBe(b);
+		});
+
+		it('focusFirst skips disabled controls', () => {
+			const a = makeButton('a');
+			const b = makeButton('b');
+			a.setDisabled(true);
+			wm.register(a); wm.register(b);
+			wm.focusFirst();
+			expect(wm.getFocused()).toBe(b);
+		});
+
+		it('focusById picks the control with the matching id', () => {
+			const a = new Button({ pos: new Pos(0, 0), size: new Size(6, 3), id: 'save' });
+			const b = new Button({ pos: new Pos(0, 0), size: new Size(6, 3), id: 'cancel' });
+			wm.register(a); wm.register(b);
+			expect(wm.focusById('cancel')).toBe(true);
+			expect(wm.getFocused()).toBe(b);
+			expect(wm.focusById('nope')).toBe(false);
+		});
+
+		it('focusById returns false when the match is ineligible (disabled)', () => {
+			const a = new Button({ pos: new Pos(0, 0), size: new Size(6, 3), id: 'x' });
+			a.setDisabled(true);
+			wm.register(a);
+			expect(wm.focusById('x')).toBe(false);
+		});
+
+		it('trapFocus limits focusNext to descendants of the trap window', () => {
+			const box   = new Window({ pos: new Pos(0, 0), size: new Size(30, 10) });
+			const inner = makeButton('inner');
+			const outer = makeButton('outer');
+			box.addChild(inner);
+			screen.addChild(box);
+			wm.register(inner, box);
+			wm.register(outer);
+
+			const release = wm.trapFocus(box);
+			wm.focusFirst();
+			expect(wm.getFocused()).toBe(inner);
+			wm.focusNext();
+			// Only `inner` is inside the trap, so cycling stays on it.
+			expect(wm.getFocused()).toBe(inner);
+			// setFocus to outer is rejected while trapped.
+			wm.setFocus(outer);
+			expect(wm.getFocused()).toBe(inner);
+
+			release();
+			wm.setFocus(outer);
+			expect(wm.getFocused()).toBe(outer);
+		});
+
+		it('trapFocus release functions stack in LIFO order', () => {
+			const a = new Window({ pos: new Pos(0, 0), size: new Size(5, 5) });
+			const b = new Window({ pos: new Pos(0, 0), size: new Size(5, 5) });
+			const rel1 = wm.trapFocus(a);
+			expect(wm.getFocusTrap()).toBe(a);
+			const rel2 = wm.trapFocus(b);
+			expect(wm.getFocusTrap()).toBe(b);
+			rel2();
+			expect(wm.getFocusTrap()).toBe(a);
+			rel1();
+			expect(wm.getFocusTrap()).toBeNull();
+		});
+	});
+
+	// ── onFocus / onBlur (P1-22) ──────────────────────────────────────────────
+	describe('onFocus / onBlur integration', () => {
+		it('fires onFocus when moveFocus reaches the control', () => {
+			const focus = vi.fn();
+			const a = new Button({ pos: new Pos(0, 0), size: new Size(6, 3), onFocus: focus });
+			const b = makeButton('b');
+			wm.register(a); wm.register(b);
+			wm.focusFirst();
+			expect(focus).toHaveBeenCalledTimes(1);
+		});
+
+		it('fires onBlur when focus moves away', () => {
+			const blur = vi.fn();
+			const a = new Button({ pos: new Pos(0, 0), size: new Size(6, 3), onBlur: blur });
+			const b = makeButton('b');
+			wm.register(a); wm.register(b);
+			wm.focusFirst();
+			wm.focusNext();
+			expect(blur).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	// ── Error boundary (P1-23) ────────────────────────────────────────────────
+	describe('error boundary', () => {
+		it('invokes onError instead of throwing when a child render() fails', () => {
+			class Boom extends Window {
+				public override render(): void { throw new Error('kaboom'); }
+			}
+			const onError = vi.fn();
+			const s = makeScreen();
+			const m = new WindowManager(s, { onError });
+			// Compose directly via Window.render so the top-level Screen.render mock
+			// (which skips the child loop) does not hide the error.
+			const box = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
+			const bad = new Boom({ pos: new Pos(0, 0), size: new Size(10, 3) });
+			box.addChild(bad);
+			try {
+				expect(() => box.render()).not.toThrow();
+				expect(onError).toHaveBeenCalledTimes(1);
+				expect(onError.mock.calls[0]?.[1]).toBe(bad);
+			} finally {
+				m.stop();
+				s.dispose();
+			}
+		});
+
+		it('rethrows after the manager stops (handler is cleared)', () => {
+			class Boom extends Window {
+				public override render(): void { throw new Error('post-stop'); }
+			}
+			const s = makeScreen();
+			const m = new WindowManager(s, { onError: () => {} });
+			m.stop();
+			const box = new Window({ pos: new Pos(0, 0), size: new Size(20, 5) });
+			const bad = new Boom({ pos: new Pos(0, 0), size: new Size(10, 3) });
+			box.addChild(bad);
+			try {
+				expect(() => box.render()).toThrow(/post-stop/);
+			} finally {
+				s.dispose();
+			}
+		});
+	});
 });
