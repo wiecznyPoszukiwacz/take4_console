@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.31.0] – 2026-04-20
+
+### Added — backlog P2-59 (damage tracking / dirty-region render)
+- **`DirtyRect`** — nowy typ (`{ x, y, w, h }`) eksportowany z
+  `src/index.mts`. Reprezentuje zmieniony obszar w lokalnym
+  układzie współrzędnych `Window` albo (po zebraniu przez
+  `Screen.render()`) w układzie ekranowym.
+- **`Window.markDirty(rect?)` / `Window.invalidate()`** — publiczny
+  API do zgłaszania zmian zawartości. Wszystkie metody zapisu
+  (`setCell`, `setChar`, `mergeStyle`, `fill`, `clear`, `writeText`)
+  same wołają `markDirty`, więc niestandardowe kontrolki dostają
+  tracking za darmo; `invalidate()` to alias „cała kontrolka brudna”.
+  Zapisy w obrębie `render()` są globalnie tłumione
+  (`Window.renderingDepth`) żeby re-paint w overriddowanym
+  `render()` nie unieważniał pustych klatek.
+- **`Window.parent` + `markFullInvalidation()`** — okno trzyma
+  wskaźnik na rodzica, a każda zmiana geometrii / topologii
+  (`addChild`, `removeChild`, `setVisible`, `setZIndex`,
+  `resizeRegions`) propaguje się w górę do rootowego `Screen`,
+  który ustawia flagę `fullInvalidate`. `Screen` overriduje tę
+  metodę bezpośrednio, więc sygnał nie idzie wyżej.
+- **`Screen.render()` — nowa ścieżka emisji**. Gdy
+  `damageTracking` jest włączone (default `true`) i żadna dirty
+  nie istnieje, klatka jest pomijana w całości (zero
+  `process.stdout.write`). W przeciwnym razie `Screen` zbiera
+  rect-y w dół drzewa (`collectDirtyRects`), koalescencja do
+  per-row min/max X (`emitDirty`), emit tylko dla zmienionych
+  komórek z cursor-addressingiem `\x1b[row;colH`. Pełny repaint
+  (`emitFull`) uruchamia się dla pierwszej klatki, po `resize()`,
+  po `invalidate()` / `markFullInvalidation()` bąbelkowanym z
+  dziecka i po `setDamageTracking(...)` (tranzycja zawsze resetuje
+  terminal).
+- **`ScreenOptions.damageTracking`** — konfigurowalne w
+  konstruktorze (default `true`); `Screen.setDamageTracking(enabled)`
+  / `Screen.isDamageTrackingEnabled()` do przełączania w runtime;
+  `Screen.invalidate()` do ręcznego forsowania pełnego repaintu.
+- **`ScreenFrameStats.cellsEmitted` / `fullRepaint`** — nowe pola
+  w evencie `'frame'` raportujące ile cell-i realnie poszło na
+  stdout i czy była to pełna klatka. Klatki pominięte raportują
+  `cellsEmitted: 0` (`fullRepaint` pozostaje `undefined`).
+- **WindowManager.resume()** — po wznowieniu z `pause()` woła
+  `screen.invalidate()`, więc klatka po powrocie z powłoki
+  zawsze jest pełna (cache dirty po pauzie jest już nieaktualny).
+- **Audyt kontrolek** — state-setter-y w `TextBox`, `TextArea`,
+  `ListBox`, `Tabs`, `Checkbox`, `Radio`, `Spinner`, `Sparkline`,
+  `LineChart`, `BarChart`, `ProgressBar`, `ProgressBarV`,
+  `StatusLED` wołają `markDirty()`; `handleKey()` we wszystkich
+  interaktywnych kontrolkach również. Statyczne kontrolki nie
+  dostały zmian — ich zawartość zmienia się tylko przy jawnym
+  `markDirty` / `writeText`.
+- **Demo + binding** — `Ctrl+D` przełącza damage tracking
+  (top-center toast z nowym stanem). `'frame'` event pozwala
+  zmierzyć różnicę `cellsEmitted`.
+- **Doc** — `doc/p2-59-damage-tracking.md` opisuje algorytm,
+  propagację, escape hatches, backwards compatibility.
+- **Testy** — `tests/Screen.test.mts` (6 nowych, 32 łącznie):
+  pełny repaint pierwszej klatki, skip klatki bez zmian, per-row
+  emit po `setCell`, `resize()` forsuje full, `invalidate()`
+  forsuje full, `setDamageTracking(false)` wraca do pre-0.31.
+
 ## [0.30.0] – 2026-04-18
 
 ### Added — backlog P1-27 (Toast / Notification overlay)

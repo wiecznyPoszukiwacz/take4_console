@@ -34,6 +34,7 @@ export class BarChart extends Window {
 	/** Sets the data values. Call render() afterwards. */
 	public setData(data: number[]): void {
 		this.data = data;
+		this.markDirty();
 	}
 
 	/** Returns the current data values. */
@@ -44,6 +45,7 @@ export class BarChart extends Window {
 	/** Sets the bar labels. Call render() afterwards. */
 	public setLabels(labels: string[]): void {
 		this.labels = labels;
+		this.markDirty();
 	}
 
 	/** Returns the current bar labels. */
@@ -54,6 +56,7 @@ export class BarChart extends Window {
 	/** Sets the maximum Y value. Pass undefined to derive from data. Call render() afterwards. */
 	public setMax(max: number | undefined): void {
 		this.max = max;
+		this.markDirty();
 	}
 
 	/** Returns the configured maximum Y value, or undefined if derived from data. */

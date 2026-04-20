@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { CellAttributes, ScreenFrameStats, ScreenOptions, StyleId, TerminalSize, ToastOptions, ToastPosition } from './types.mjs';
+import type { CellAttributes, DirtyRect, ScreenFrameStats, ScreenOptions, StyleId, TerminalSize, ToastOptions, ToastPosition } from './types.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
 import { getRegistry, setRegistry } from './RegistryHolder.mjs';
 import { Window } from './Window.mjs';
@@ -43,6 +43,18 @@ export class Screen extends Window {
 	/** Per-toast dismiss callbacks (from `ToastOptions.onDismiss`). Kept out of
 	 *  the `Toast` instance so the control stays free of bookkeeping code. */
 	private toastDismissHandlers: Map<Toast, () => void>;
+	/** When true, `render()` computes the union of every dirty rect propagated
+	 *  bottom-up from the window tree and emits ANSI sequences only for those
+	 *  cells. When false, every frame re-emits the full buffer (pre-0.31
+	 *  behaviour), which is useful for debugging or for terminals that
+	 *  mis-handle partial cursor jumps. Configured via `ScreenOptions.damageTracking`. */
+	private damageTracking: boolean;
+	/** Forces the next `render()` onto the full-repaint path regardless of the
+	 *  dirty state. Set on the first frame, after `resize()`, and bubbled up
+	 *  from descendants via `markFullInvalidation()` when they change
+	 *  geometry, visibility, or tree topology in ways that would leave
+	 *  stale cells on stdout. Cleared after every full-repaint emit. */
+	private fullInvalidate: boolean;
 
 	/** Initializes the root window sized to the current terminal dimensions.
 	 *  Creates a fresh StyleRegistry (with built-in styles pre-registered)
@@ -68,6 +80,8 @@ export class Screen extends Window {
 		this.activeToasts        = new Map();
 		this.toastTimers         = new Map();
 		this.toastDismissHandlers = new Map();
+		this.damageTracking      = options?.damageTracking ?? true;
+		this.fullInvalidate      = true;
 
 		if (options?.altScreen)  this.enterAltScreen();
 		if (options?.hideCursor) this.hideHardwareCursor();
@@ -340,12 +354,49 @@ export class Screen extends Window {
 	 */
 	public override render(): void {
 		const start = Date.now();
-		super.render();
 
+		// Fast path: damage tracking is on, nothing is dirty, no full
+		// invalidation pending — skip composition AND emit entirely. The
+		// terminal already shows the correct pixels from the previous frame.
+		if (this.damageTracking && !this.fullInvalidate) {
+			const rects: DirtyRect[] = [];
+			this.collectDirtyRects(0, 0, rects);
+			if (rects.length === 0) {
+				this.events.emit('frame', { ms: Date.now() - start, cellsEmitted: 0 });
+				return;
+			}
+			// Compose first so `this.region` reflects the latest content; the
+			// emit below reads from it. We keep `rects` for the emit phase
+			// instead of re-collecting, because `super.render()` does not
+			// mutate dirty flags (render-depth guard suppresses markDirty
+			// inside render overrides).
+			super.render();
+			const stats = this.emitDirty(rects);
+			this.clearDirtyRecursive();
+			this.events.emit('frame', { ms: Date.now() - start, cellsEmitted: stats, fullRepaint: false });
+			return;
+		}
+
+		// Slow / fallback path: full repaint. Always used for the first
+		// frame, after `resize()`, after `markFullInvalidation()`, and when
+		// damage tracking has been disabled by the caller.
+		super.render();
+		const cellsEmitted = this.emitFull();
+		this.fullInvalidate = false;
+		this.clearDirtyRecursive();
+		this.events.emit('frame', { ms: Date.now() - start, cellsEmitted, fullRepaint: true });
+	}
+
+	/** Emits every visible cell in `this.region` as one ANSI write, starting
+	 *  with `\x1b[H` (cursor home) and ending with `\x1b[0m`. Returns the
+	 *  number of cells whose character was actually written (skips wide-char
+	 *  continuation sentinels). Used by the full-repaint path. */
+	private emitFull(): number {
 		const reg      = getRegistry();
 		const chars    = this.region.getChars();
 		const styleIds = this.region.getStyleIds();
 		let output = '\x1b[H';
+		let count  = 0;
 		for (let i = 0; i < chars.length; i++) {
 			const ch = chars[i];
 			// Empty-string sentinel = continuation cell of a wide character;
@@ -353,10 +404,105 @@ export class Screen extends Window {
 			if (ch === '') continue;
 			output += this.buildAnsiSequence(reg.get(styleIds[i]));
 			output += ch;
+			count++;
 		}
 		output += '\x1b[0m';
 		process.stdout.write(output);
-		this.events.emit('frame', { ms: Date.now() - start });
+		return count;
+	}
+
+	/** Coalesces the collected dirty rects into per-row horizontal intervals
+	 *  and emits only those cells, using `\x1b[row;colH` cursor jumps between
+	 *  rows. Returns the number of cells emitted so consumers of the 'frame'
+	 *  event can see how much work each frame did. */
+	private emitDirty(rects: DirtyRect[]): number {
+		const { width: sw, height: sh } = this.getSize();
+		if (sw === 0 || sh === 0) { process.stdout.write(''); return 0; }
+
+		// Collapse rects into per-row min/max columns. A Map keyed by row is
+		// sparse enough for the common case (few small dirty regions) and
+		// avoids allocating a dense sh-sized array when only a couple of
+		// rows are touched.
+		const rowSpans = new Map<number, { minX: number; maxX: number }>();
+		for (const r of rects) {
+			const y0 = Math.max(0, r.y);
+			const y1 = Math.min(sh - 1, r.y + r.h - 1);
+			const x0 = Math.max(0, r.x);
+			const x1 = Math.min(sw - 1, r.x + r.w - 1);
+			if (y1 < y0 || x1 < x0) continue;
+			for (let y = y0; y <= y1; y++) {
+				const existing = rowSpans.get(y);
+				if (existing) {
+					if (x0 < existing.minX) existing.minX = x0;
+					if (x1 > existing.maxX) existing.maxX = x1;
+				} else {
+					rowSpans.set(y, { minX: x0, maxX: x1 });
+				}
+			}
+		}
+		if (rowSpans.size === 0) return 0;
+
+		// Emit rows in ascending order so the terminal cursor advances
+		// forward — random access is fine (we always send an explicit cursor
+		// move) but ordered output compresses a bit better and is easier to
+		// reason about in transcripts / tests.
+		const rows = [...rowSpans.keys()].sort((a, b) => a - b);
+		const reg      = getRegistry();
+		const chars    = this.region.getChars();
+		const styleIds = this.region.getStyleIds();
+		let output = '';
+		let count  = 0;
+		for (const y of rows) {
+			const span = rowSpans.get(y)!;
+			// ANSI cursor addressing is 1-based.
+			output += `\x1b[${y + 1};${span.minX + 1}H`;
+			for (let x = span.minX; x <= span.maxX; x++) {
+				const i  = y * sw + x;
+				const ch = chars[i];
+				if (ch === '') continue;
+				output += this.buildAnsiSequence(reg.get(styleIds[i]));
+				output += ch;
+				count++;
+			}
+		}
+		output += '\x1b[0m';
+		process.stdout.write(output);
+		return count;
+	}
+
+	/** Overrides the parent hook so bubbled full-invalidation signals land
+	 *  on this Screen's own `fullInvalidate` flag instead of walking further
+	 *  up a non-existent parent chain. Public so WindowManager can also
+	 *  request a full repaint after pause/resume or alt-screen toggling. */
+	public override markFullInvalidation(): void {
+		this.fullInvalidate = true;
+	}
+
+	/** Public alias of `markFullInvalidation()` — schedules a full repaint on
+	 *  the next `render()` call. Use this when external state (terminal
+	 *  re-init, post-OS dialog, SSH reconnect, …) may have corrupted the
+	 *  on-screen buffer and the stored dirty rects are no longer sufficient. */
+	public invalidate(): void {
+		this.markFullInvalidation();
+	}
+
+	/** Returns whether damage tracking is currently enabled. Useful for demo
+	 *  code and tests that want to assert or toggle the mode at runtime. */
+	public isDamageTrackingEnabled(): boolean {
+		return this.damageTracking;
+	}
+
+	/** Enables or disables damage tracking at runtime. Disabling forces every
+	 *  subsequent frame onto the full-repaint path; re-enabling resumes the
+	 *  dirty-rect emit on the next frame (after one final full repaint, so
+	 *  the terminal state matches the tree-derived baseline). */
+	public setDamageTracking(enabled: boolean): void {
+		if (this.damageTracking === enabled) return;
+		this.damageTracking = enabled;
+		// Always do one full repaint on transition so the terminal buffer
+		// matches what the window tree would produce from scratch — useful
+		// when flipping back and forth for debugging.
+		this.fullInvalidate = true;
 	}
 
 	// ── Private helpers ───────────────────────────────────────────────────────

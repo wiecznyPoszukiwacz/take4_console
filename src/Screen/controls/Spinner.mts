@@ -52,12 +52,14 @@ export class Spinner extends Window {
 	public step(): void {
 		if (!this.running || this.frames.length === 0) return;
 		this.frame = (this.frame + 1) % this.frames.length;
+		this.markDirty();
 	}
 
 	/** Sets the current frame index directly. Wraps into the valid range. */
 	public setFrame(frame: number): void {
 		if (this.frames.length === 0) return;
 		this.frame = ((frame % this.frames.length) + this.frames.length) % this.frames.length;
+		this.markDirty();
 	}
 
 	/** Returns the current frame index. */
@@ -67,12 +69,16 @@ export class Spinner extends Window {
 
 	/** Starts or resumes the animation. step() will advance frames again. */
 	public start(): void {
+		if (this.running) return;
 		this.running = true;
+		this.markDirty();
 	}
 
 	/** Pauses the animation. step() becomes a no-op; the current frame stays visible. */
 	public stop(): void {
+		if (!this.running) return;
 		this.running = false;
+		this.markDirty();
 	}
 
 	/** Returns whether the spinner is currently animating. */

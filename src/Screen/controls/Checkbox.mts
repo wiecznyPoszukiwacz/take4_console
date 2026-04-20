@@ -31,7 +31,9 @@ export class Checkbox extends Window {
 
 	/** Toggles or sets the checked state. */
 	public setChecked(checked: boolean): void {
+		if (this.checked === checked) return;
 		this.checked = checked;
+		this.markDirty();
 	}
 
 	/** Returns the current checked state. */
@@ -44,6 +46,7 @@ export class Checkbox extends Window {
 		if (this.disabled) return;
 		if (key === ' ' || key === 'space') {
 			this.checked = !this.checked;
+			this.markDirty();
 			this.onChange?.(this.checked);
 		}
 	}

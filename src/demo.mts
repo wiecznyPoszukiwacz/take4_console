@@ -439,6 +439,22 @@ const main = async (): Promise<void> => {
 		return true;
 	});
 
+	// P2-59 demo: Ctrl+D toggles damage tracking at runtime and posts a
+	// sticky toast with the new state so the effect is visible. When
+	// tracking is on, the 'frame' event reports only the dirty cells each
+	// frame (watch the toast subtitle); when it's off, every frame is a
+	// full repaint as before.
+	wm.bindKey('ctrl+d', () => {
+		const next = !screen.isDamageTrackingEnabled();
+		screen.setDamageTracking(next);
+		screen.toast(
+			next ? ' Damage tracking ON — only dirty cells are emitted '
+			     : ' Damage tracking OFF — every frame is a full repaint ',
+			{ position: 'top-center', duration: 2500 },
+		);
+		return true;
+	});
+
 	// Virtual cursor: animated caret in TextBox/TextArea. The `tbEmail`
 	// TextBox opts into slow blink via layout.yaml; here we flip the
 	// `tbUsername` TextBox into the `irregular` mode so the two

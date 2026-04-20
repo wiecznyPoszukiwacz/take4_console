@@ -31,6 +31,7 @@ export class Sparkline extends Window {
 	/** Sets the data series. Call render() afterwards. */
 	public setData(data: number[]): void {
 		this.data = data;
+		this.markDirty();
 	}
 
 	/** Returns the current data series. */
@@ -41,6 +42,7 @@ export class Sparkline extends Window {
 	/** Sets the minimum value. Pass undefined to derive from data. Call render() afterwards. */
 	public setMin(min: number | undefined): void {
 		this.minValue = min;
+		this.markDirty();
 	}
 
 	/** Returns the configured minimum value, or undefined if derived from data. */
@@ -51,6 +53,7 @@ export class Sparkline extends Window {
 	/** Sets the maximum value. Pass undefined to derive from data. Call render() afterwards. */
 	public setMax(max: number | undefined): void {
 		this.maxValue = max;
+		this.markDirty();
 	}
 
 	/** Returns the configured maximum value, or undefined if derived from data. */

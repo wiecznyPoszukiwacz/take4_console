@@ -48,6 +48,7 @@ export class Tabs extends Window {
 	public setTitles(titles: string[]): void {
 		this.titles      = titles;
 		this.activeIndex = Math.max(0, Math.min(titles.length - 1, this.activeIndex));
+		this.markDirty();
 	}
 
 	/** Returns the current tab titles. */
@@ -64,6 +65,7 @@ export class Tabs extends Window {
 		const clamped = Math.max(0, Math.min(this.titles.length - 1, index));
 		if (clamped !== this.activeIndex) {
 			this.activeIndex = clamped;
+			this.markDirty();
 			this.onChange?.(clamped, this.titles[clamped]);
 		}
 	}

@@ -54,6 +54,7 @@ export class ListBox<T = string> extends Window {
 		this.items         = items;
 		this.selectedIndex = items.length > 0 ? 0 : -1;
 		this.scrollTop     = 0;
+		this.markDirty();
 	}
 
 	/** Returns the current list items. */
@@ -67,7 +68,9 @@ export class ListBox<T = string> extends Window {
 			this.selectedIndex = -1;
 			return;
 		}
+		const prev = this.selectedIndex;
 		this.selectedIndex = Math.max(0, Math.min(this.items.length - 1, index));
+		if (prev !== this.selectedIndex) this.markDirty();
 		this.ensureVisible();
 	}
 
@@ -85,6 +88,7 @@ export class ListBox<T = string> extends Window {
 	/** Replaces the per-row renderer after construction. Pass undefined to restore default behaviour. */
 	public setRenderItem(fn: ((item: T, ctx: ListBoxRenderContext) => ListBoxRowSegments) | undefined): void {
 		this.renderItem = fn;
+		this.markDirty();
 	}
 
 	/** Returns the configured row height in cells. */
@@ -129,7 +133,11 @@ export class ListBox<T = string> extends Window {
 				return;
 		}
 
+		const prevScroll = this.scrollTop;
 		this.ensureVisible();
+		if (this.selectedIndex !== prev || this.scrollTop !== prevScroll) {
+			this.markDirty();
+		}
 		if (this.selectedIndex !== prev) {
 			this.onChange?.(this.selectedIndex, this.items[this.selectedIndex]);
 		}

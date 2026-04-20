@@ -75,6 +75,7 @@ export class TextBox extends Window {
 		this.cursor = Math.min(this.cursor, value.length);
 		this.selectionAnchor = null;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Returns the normalized selection range `{ start, end }` (half-open)
@@ -103,6 +104,7 @@ export class TextBox extends Window {
 		this.selectionAnchor = a === c ? null : a;
 		this.cursor = c;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Selects every character in the current value. No-op when the value is empty. */
@@ -114,11 +116,14 @@ export class TextBox extends Window {
 		this.selectionAnchor = 0;
 		this.cursor = this.value.length;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Drops any active selection without moving the cursor. */
 	public clearSelection(): void {
+		if (this.selectionAnchor === null) return;
 		this.selectionAnchor = null;
+		this.markDirty();
 	}
 
 	/** Replaces the onChange callback (passing undefined clears it). */
@@ -148,6 +153,7 @@ export class TextBox extends Window {
 		this.cursor = Math.max(0, Math.min(pos, this.value.length));
 		this.selectionAnchor = null;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Returns the current cursor character index. */
@@ -256,6 +262,12 @@ export class TextBox extends Window {
 	private finishKey(before: string): void {
 		this.clampScroll();
 		this.virtualCursor.resetPhase();
+		// Every key dispatch is a potential content / selection / cursor
+		// change — flag the window dirty unconditionally so the next
+		// Screen.render() re-emits it. The per-key equality checks in
+		// individual branches are not worth the code; the bounding box is
+		// cheap and we're going to emit at most the whole window.
+		this.markDirty();
 		if (this.value !== before) this.onChange?.(this.value);
 	}
 

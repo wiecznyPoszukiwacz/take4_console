@@ -110,12 +110,39 @@ export interface ScreenOptions {
    *  for inspection; full enforcement (frame coalescing) lands with backlog
    *  item P2-47. Default: undefined (uncapped). */
   targetFps?: number;
+  /** Enables damage-region tracking: `Screen.render()` collects dirty rects
+   *  propagated bottom-up from each mutated window and emits ANSI sequences
+   *  only for the changed cells. A frame with no dirty rects is skipped
+   *  entirely (no stdout traffic). The first frame and every frame after
+   *  `resize()` / `invalidate()` fall back to a full repaint. Default:
+   *  `true`. Set to `false` for the pre-0.31 behaviour (always emit the
+   *  full buffer), useful for debugging or terminals that mis-handle
+   *  partial cursor jumps. */
+  damageTracking?: boolean;
 }
 
 /** Statistics emitted by the Screen 'frame' event after each render() call. */
 export interface ScreenFrameStats {
   /** Wall-clock duration of the render() call in milliseconds. */
   ms: number;
+  /** Number of cells emitted to stdout during this frame (0 when the frame
+   *  was skipped because nothing was dirty). Populated only when damage
+   *  tracking is enabled; undefined otherwise. */
+  cellsEmitted?: number;
+  /** True when the emit path was a full-screen repaint (first frame,
+   *  post-resize, or damage tracking disabled); false when only dirty runs
+   *  were emitted. Undefined when the frame was skipped entirely. */
+  fullRepaint?: boolean;
+}
+
+/** Rectangle expressed in the owning Window's local coordinate space (for
+ *  dirty regions on a Window) or in Screen coordinates (when collected by
+ *  `Screen.render()` during damage tracking). */
+export interface DirtyRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** Box-drawing character style for window borders.

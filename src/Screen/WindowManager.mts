@@ -622,6 +622,10 @@ export class WindowManager {
 		this.installBlinkTimer();
 
 		if (options?.rerender !== false) {
+			// The paused interval may have reflowed via external writes
+			// (e.g. another process scribbled onto stdout), so schedule a
+			// full repaint instead of relying on cached dirty rects.
+			this.screen.invalidate();
 			this.renderFrame();
 		}
 	}

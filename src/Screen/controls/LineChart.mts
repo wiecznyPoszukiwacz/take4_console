@@ -38,6 +38,7 @@ export class LineChart extends Window {
 	/** Sets the data series. Call render() afterwards. */
 	public setData(data: number[]): void {
 		this.data = data;
+		this.markDirty();
 	}
 
 	/** Returns the current data series. */
@@ -48,6 +49,7 @@ export class LineChart extends Window {
 	/** Sets the minimum Y value. Pass undefined to derive from data. Call render() afterwards. */
 	public setMin(min: number | undefined): void {
 		this.minValue = min;
+		this.markDirty();
 	}
 
 	/** Returns the configured minimum Y value, or undefined if derived from data. */
@@ -58,6 +60,7 @@ export class LineChart extends Window {
 	/** Sets the maximum Y value. Pass undefined to derive from data. Call render() afterwards. */
 	public setMax(max: number | undefined): void {
 		this.maxValue = max;
+		this.markDirty();
 	}
 
 	/** Returns the configured maximum Y value, or undefined if derived from data. */

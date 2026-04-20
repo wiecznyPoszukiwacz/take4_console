@@ -201,11 +201,20 @@ Totals: **60 items** — P0: 12, P1: 22, P2: 26.
 | 2      | P1-20 | Selection w TextBox / TextArea          | 0.28.0  | ✅ done (2026-04-18) |
 | 2      | P1-16 | Padding/margin (margin dopiął P0-3)     | 0.29.0  | ✅ done (2026-04-18) |
 | 3      | P1-27 | Built-in Toast / Notification           | 0.30.0  | ✅ done (2026-04-18) |
+| 4      | P2-59 | Double-buffer / damage tracking         | 0.31.0  | ✅ done (2026-04-20) |
 
 Pozostałe P1 / P2 itemy są trackowane w `doc/take4-console-backlog.md` i
 dopisane zostaną tu w miarę lądowania.
 
-**Currently working on:** Sprint 2 (P1 — fundament DX). Sprint 1 zamknięty.
+**Currently working on:** Sprint 2 (P1 — fundament DX) zasadniczo zamknięty;
+0.31.0 zamyka P2-59 (damage tracking) wybrane poza kolejnością na prośbę
+użytkownika — `Window.markDirty(rect?)` + bottom-up propagacja,
+`Screen.render()` emituje tylko zmienione cell-e (full repaint tylko po
+pierwszej klatce / `resize()` / `invalidate()`), klatka bez zmian jest
+pomijana w całości; demo: `Ctrl+D` toggle tracking —
+doc/p2-59-damage-tracking.md.
+
+Kontekst sprintu 2 (historyczny):
 Batch 0.26.0 dostarczył `WindowManager` DX (focus API + hooki + error
 boundary) razem z z-indexem. 0.27.0 dołożył `VirtualCursor` (software
 caret z konfigurowalnym symbolem i miganiem) + `WindowManager.enableCursorBlink()`

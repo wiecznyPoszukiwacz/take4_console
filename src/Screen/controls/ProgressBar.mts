@@ -37,6 +37,7 @@ export class ProgressBar extends Window {
 	/** Sets the current value (clamped to 0–max). Call render() afterwards. */
 	public setValue(value: number): void {
 		this.value = Math.max(0, Math.min(value, this.max));
+		this.markDirty();
 	}
 
 	/** Returns the current value. */
@@ -48,6 +49,7 @@ export class ProgressBar extends Window {
 	public setMax(max: number): void {
 		this.max   = Math.max(1, max);
 		this.value = Math.min(this.value, this.max);
+		this.markDirty();
 	}
 
 	/** Returns the maximum value. */

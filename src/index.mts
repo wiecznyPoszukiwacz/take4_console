@@ -74,6 +74,7 @@ export type {
 	TerminalSize,
 	ScreenOptions,
 	ScreenFrameStats,
+	DirtyRect,
 	AxisSpec,
 	DimSpec,
 	FlexBasis,

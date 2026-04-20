@@ -38,7 +38,9 @@ export class StatusLED extends Window {
 
 	/** Sets the current LED state. Call render() afterwards to update the display. */
 	public setState(state: 'ok' | 'warn' | 'error' | 'off'): void {
+		if (this.state === state) return;
 		this.state = state;
+		this.markDirty();
 	}
 
 	/** Returns the current LED state. */

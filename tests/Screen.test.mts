@@ -259,4 +259,102 @@ describe('Screen', () => {
       expect(child.getSize()).toEqual({ width: 80, height: 24 });
     });
   });
+
+  // ── Damage tracking (P2-59) ────────────────────────────────────────────────
+
+  describe('damage tracking', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let writeSpy: any;
+    beforeEach(() => {
+      screen.resize(40, 10);
+      writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    });
+    afterEach(() => {
+      writeSpy.mockRestore();
+    });
+
+    const lastWrite = (): string => {
+      const calls = writeSpy.mock.calls;
+      return calls.length === 0 ? '' : String(calls[calls.length - 1]?.[0] ?? '');
+    };
+
+    it('emits a full repaint on the first render', () => {
+      let captured: { fullRepaint?: boolean; cellsEmitted?: number } | null = null;
+      screen.on('frame', stats => { captured = stats; });
+      screen.render();
+      expect(captured).not.toBeNull();
+      expect(captured!.fullRepaint).toBe(true);
+      expect(captured!.cellsEmitted).toBeGreaterThan(0);
+      // Full-repaint output always starts with the cursor-home sequence.
+      expect(lastWrite().startsWith('\x1b[H')).toBe(true);
+    });
+
+    it('skips the second render entirely when nothing changed', () => {
+      screen.render(); // primes a full repaint
+      writeSpy.mockClear();
+      let stats: { fullRepaint?: boolean; cellsEmitted?: number } | null = null;
+      screen.on('frame', s => { stats = s; });
+      screen.render();
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(stats!.cellsEmitted).toBe(0);
+      expect(stats!.fullRepaint).toBeUndefined();
+    });
+
+    it('emits only the dirty row after a single cell mutation', () => {
+      const win = new Window({ pos: new Pos(5, 3), size: new Size(6, 2) });
+      screen.addChild(win);
+      screen.render();               // full paint because addChild invalidated
+      writeSpy.mockClear();
+
+      const styleId = screen.registerStyle({ foreground: 196 });
+      win.setCell(1, 0, 'X', styleId);
+
+      let stats: { fullRepaint?: boolean; cellsEmitted?: number } | null = null;
+      screen.on('frame', s => { stats = s; });
+      screen.render();
+
+      expect(stats!.fullRepaint).toBe(false);
+      // One cell changed → one cell emitted.
+      expect(stats!.cellsEmitted).toBe(1);
+      const out = lastWrite();
+      // Expect ANSI cursor addressing pointing to row 4 (3 + 1-based) col 7 (5 + 1 + 1-based).
+      expect(out).toContain('\x1b[4;7H');
+      expect(out).toContain('X');
+    });
+
+    it('falls back to a full repaint after resize()', () => {
+      screen.render();
+      writeSpy.mockClear();
+      screen.resize(60, 15);
+
+      let stats: { fullRepaint?: boolean } | null = null;
+      screen.on('frame', s => { stats = s; });
+      screen.render();
+
+      expect(stats!.fullRepaint).toBe(true);
+    });
+
+    it('falls back to a full repaint after invalidate()', () => {
+      screen.render();
+      writeSpy.mockClear();
+      screen.invalidate();
+
+      let stats: { fullRepaint?: boolean } | null = null;
+      screen.on('frame', s => { stats = s; });
+      screen.render();
+      expect(stats!.fullRepaint).toBe(true);
+    });
+
+    it('setDamageTracking(false) emits the full buffer every frame', () => {
+      screen.render();               // prime
+      screen.setDamageTracking(false);
+      writeSpy.mockClear();
+
+      let stats: { fullRepaint?: boolean } | null = null;
+      screen.on('frame', s => { stats = s; });
+      screen.render();
+      expect(stats!.fullRepaint).toBe(true);
+      expect(writeSpy).toHaveBeenCalled();
+    });
+  });
 });

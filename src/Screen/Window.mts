@@ -1,4 +1,4 @@
-import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize, LayoutMode, AlignItems, JustifyContent, Padding, PaddingSpec, Margin, MarginSpec, DimSpec } from './types.mjs';
+import type { Cell, StyleId, BorderStyle, BorderChars, WindowBorder, WindowProperties, WriteTextOptions, WriteTextInput, WriteTextSegment, TerminalSize, LayoutMode, AlignItems, JustifyContent, Padding, PaddingSpec, Margin, MarginSpec, DimSpec, DirtyRect } from './types.mjs';
 import { BUILTIN_TEXT, BUILTIN_TEXT_FOCUSED, BUILTIN_TEXT_DISABLED, BUILTIN_BORDER, BUILTIN_BORDER_FOCUSED, BUILTIN_BORDER_DISABLED } from './types.mjs';
 import { Region } from './Region.mjs';
 import { StyleRegistry } from './StyleRegistry.mjs';
@@ -156,6 +156,25 @@ export class Window {
 	private onFocusHandler: (() => void) | undefined;
 	/** Fires once when focused state flips from true to false. */
 	private onBlurHandler: (() => void) | undefined;
+	/** Parent window (set by `addChild`, cleared by `removeChild`). Damage
+	 *  tracking walks up this chain to notify the root `Screen` of geometry
+	 *  or topology changes that need a full repaint. */
+	protected parent: Window | null = null;
+	/** Accumulated dirty region in this window's local coordinates.
+	 *  - `null`  — nothing changed since the last emit.
+	 *  - `'all'` — the whole window area needs to be re-emitted.
+	 *  - `DirtyRect` — bounding box of localised writes; `markDirty()` eagerly
+	 *    unions new rects so we only ever carry one rect per window.
+	 *  Windows start as `'all'` so the very first frame re-emits every cell. */
+	protected dirtyRect: DirtyRect | 'all' | null = 'all';
+	/** Depth of nested `Window.render()` calls currently executing. Increments
+	 *  at the top of every `render()` and decrements in a `finally`, so
+	 *  controls whose `render()` override re-writes content via `this.clear()`
+	 *  / `this.writeText(...)` do not re-mark themselves dirty every frame —
+	 *  render-time writes deterministically rebuild the display buffer from
+	 *  existing state, so marking them as "user-driven dirty" would defeat the
+	 *  "skip frame when nothing changed" optimisation. */
+	protected static renderingDepth: number = 0;
 
 	/** Creates a window from the given properties.
 	 *  For percentage-based sizes, call addChild() before writing content to the window.
@@ -209,6 +228,88 @@ export class Window {
 		return this.region.getSize();
 	}
 
+	// ── Damage tracking ─────────────────────────────────────────────────────
+
+	/** Marks this window (or a sub-rectangle in its local coordinates) as
+	 *  dirty. Subsequent `Screen.render()` calls emit ANSI only for cells
+	 *  inside the collected dirty rects, skipping untouched regions. When
+	 *  `rect` is omitted, the entire window is flagged. Render-time writes
+	 *  are ignored so controls' `render()` overrides do not re-mark
+	 *  themselves every frame. Safe to call many times between renders —
+	 *  new rects are unioned into the existing bounding box. */
+	public markDirty(rect?: DirtyRect): void {
+		if (Window.renderingDepth > 0) return;
+		if (this.dirtyRect === 'all') return;
+		if (rect === undefined) { this.dirtyRect = 'all'; return; }
+		if (rect.w <= 0 || rect.h <= 0) return;
+		if (this.dirtyRect === null) {
+			this.dirtyRect = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+			return;
+		}
+		const ax0 = this.dirtyRect.x;
+		const ay0 = this.dirtyRect.y;
+		const ax1 = ax0 + this.dirtyRect.w;
+		const ay1 = ay0 + this.dirtyRect.h;
+		const bx0 = rect.x;
+		const by0 = rect.y;
+		const bx1 = bx0 + rect.w;
+		const by1 = by0 + rect.h;
+		const nx0 = Math.min(ax0, bx0);
+		const ny0 = Math.min(ay0, by0);
+		const nx1 = Math.max(ax1, bx1);
+		const ny1 = Math.max(ay1, by1);
+		this.dirtyRect = { x: nx0, y: ny0, w: nx1 - nx0, h: ny1 - ny0 };
+	}
+
+	/** Convenience alias — flags the entire window as dirty. Equivalent to
+	 *  calling `markDirty()` with no argument; kept as a named entry point
+	 *  so custom controls can invalidate themselves without depending on
+	 *  the default-argument behaviour. */
+	public invalidate(): void {
+		this.markDirty();
+	}
+
+	/** Walks the parent chain up to the root window. Damage tracking uses
+	 *  this to bubble a full-invalidation signal to the root `Screen` when
+	 *  geometry or tree topology changes, because the cells previously
+	 *  occupied by a now-moved / resized / hidden window need to be repainted
+	 *  from the content underneath them. `Screen` overrides it to toggle its
+	 *  internal full-repaint flag; plain `Window`s forward the call up. */
+	protected markFullInvalidation(): void {
+		this.parent?.markFullInvalidation();
+	}
+
+	/** Appends this window's dirty rect (translated into screen coordinates
+	 *  via the running offset) and every descendant's dirty rects to `acc`.
+	 *  Hidden subtrees are skipped — invisible windows don't contribute to
+	 *  the emit phase, and any state change that flips visibility already
+	 *  escalated to a full invalidation so the vacated area repaints. */
+	protected collectDirtyRects(offsetX: number, offsetY: number, acc: DirtyRect[]): void {
+		if (!this.visible) return;
+		if (this.dirtyRect === 'all') {
+			const { width, height } = this.getSize();
+			acc.push({ x: offsetX, y: offsetY, w: width, h: height });
+		} else if (this.dirtyRect !== null) {
+			acc.push({
+				x: offsetX + this.dirtyRect.x,
+				y: offsetY + this.dirtyRect.y,
+				w: this.dirtyRect.w,
+				h: this.dirtyRect.h,
+			});
+		}
+		for (const child of this.children) {
+			child.collectDirtyRects(offsetX + child.x, offsetY + child.y, acc);
+		}
+	}
+
+	/** Clears the dirty flag on this window and every descendant. Called by
+	 *  `Screen.render()` after the emit phase so the next frame starts from
+	 *  a clean slate. */
+	protected clearDirtyRecursive(): void {
+		this.dirtyRect = null;
+		for (const child of this.children) child.clearDirtyRecursive();
+	}
+
 	/** Returns a snapshot of the resolved per-side margin (in cells). The parent's
 	 *  layout engine reads this to reserve outer spacing around the child. */
 	public getMargin(): Readonly<Margin> {
@@ -260,7 +361,9 @@ export class Window {
 
 	/** Sets the active state. Affects border and background appearance on next render(). */
 	public setActive(active: boolean): void {
+		if (this.active === active) return;
 		this.active = active;
+		this.markDirty();
 	}
 
 	/** Sets the focused state. Controls use this to change visual appearance on focus.
@@ -269,6 +372,7 @@ export class Window {
 	public setFocused(focused: boolean): void {
 		if (this.focused === focused) return;
 		this.focused = focused;
+		this.markDirty();
 		if (focused) this.onFocusHandler?.();
 		else         this.onBlurHandler?.();
 	}
@@ -307,7 +411,13 @@ export class Window {
 	 *  change. Does not affect layout (flex/absolute coordinates are
 	 *  independent of z). */
 	public setZIndex(zIndex: number): void {
+		if (this.zIndex === zIndex) return;
 		this.zIndex = zIndex;
+		// Re-stacking can expose or occlude any cell inside the parent's
+		// bounds — escalate to a full repaint so the neighbour(s) underneath
+		// get re-emitted along with this window.
+		this.markFullInvalidation();
+		this.markDirty();
 	}
 
 	/** Returns the direct children of this window in insertion order (a
@@ -324,6 +434,7 @@ export class Window {
 
 	/** Sets the disabled state and deactivates the window when disabled. */
 	public setDisabled(disabled: boolean): void {
+		if (this.disabled !== disabled) this.markDirty();
 		this.disabled = disabled;
 		this.setActive(!disabled);
 	}
@@ -339,7 +450,14 @@ export class Window {
 	 *  the content buffer — previously written cells reappear verbatim on the
 	 *  next render after the window is shown again. */
 	public setVisible(visible: boolean): void {
+		if (this.visible === visible) return;
 		this.visible = visible;
+		// Showing / hiding a window changes what the root Screen emits in this
+		// window's old bounds (the parent below may need to repaint, or the
+		// new reveal needs its first emit). Full invalidation is the
+		// conservative, always-correct choice.
+		this.markFullInvalidation();
+		this.markDirty();
 	}
 
 	/** Returns whether this window is currently visible. Default: true. */
@@ -349,7 +467,9 @@ export class Window {
 
 	/** Sets the label text displayed by the control. */
 	public setLabel(label: string): void {
+		if (this.label === label) return;
 		this.label = label;
+		this.markDirty();
 	}
 
 	/** Returns the current label text. */
@@ -361,6 +481,7 @@ export class Window {
 	 *  Intended for use by subclasses that need dynamic decoration (e.g. focus-state colour). */
 	protected updateBorder(border: WindowBorder | boolean | undefined): void {
 		this.border = resolveBorder(border);
+		this.markDirty();
 	}
 
 	/** Recomputes the border color from the current focused/disabled state.
@@ -383,7 +504,13 @@ export class Window {
 	 *  geometry consistent when more children join the stack. */
 	public addChild(child: Window): void {
 		this.children.push(child);
+		child.parent = this;
 		this.runLayout();
+		// Newly attached subtrees may overlap existing cells, and their own
+		// `dirtyRect` already defaults to `'all'` — but the parent region that
+		// may be exposed by later removal needs a correct baseline on the root
+		// Screen side, so we bubble a full invalidation for the first frame.
+		this.markFullInvalidation();
 	}
 
 	/** Returns a resolved Cell (char + CellAttributes) at (x, y) from the display buffer.
@@ -404,12 +531,14 @@ export class Window {
 	public setChar(x: number, y: number, char: string): void {
 		this.content.setChar(x, y, char);
 		this.region.setChar(x, y, char);
+		this.markDirty({ x, y, w: 1, h: 1 });
 	}
 
 	/** Sets the character and style ID at (x, y). Throws RangeError if out of bounds. */
 	public setCell(x: number, y: number, char: string, styleId: StyleId = 0): void {
 		this.content.setCell(x, y, char, styleId);
 		this.region.setCell(x, y, char, styleId);
+		this.markDirty({ x, y, w: 1, h: 1 });
 	}
 
 	/** Merges the given style ID onto the existing style at (x, y) without changing the character.
@@ -419,18 +548,21 @@ export class Window {
 		const mergedRegion  = this.registry.merge(this.region.getStyleId(x, y),  styleId);
 		this.content.setStyleId(x, y, mergedContent);
 		this.region.setStyleId(x, y,  mergedRegion);
+		this.markDirty({ x, y, w: 1, h: 1 });
 	}
 
 	/** Resets every cell to a blank space with style ID 0. */
 	public clear(): void {
 		this.content.clear();
 		this.region.clear();
+		this.markDirty();
 	}
 
 	/** Fills every cell with the given character and style ID. */
 	public fill(char: string, styleId: StyleId = 0): void {
 		this.content.fill(char, styleId);
 		this.region.fill(char, styleId);
+		this.markDirty();
 	}
 
 	/** Writes text into the window's content area starting at (x, y) (default 0, 0).
@@ -565,21 +697,26 @@ export class Window {
 	 */
 	public render(): void {
 		if (!this.visible) return;
-		this.syncBorderColor();
-		this.paintBackground();
-		this.blitContent();
-		this.paintBorder();
-		for (const child of this.orderedByZ()) {
-			if (!child.visible) continue;
-			try {
-				child.render();
-				this.blitChild(child);
-			} catch (err) {
-				this.paintErrorPlaceholder(child, err);
-				const handler = getErrorHandler();
-				if (handler) handler(err, child);
-				else         throw err;
+		Window.renderingDepth++;
+		try {
+			this.syncBorderColor();
+			this.paintBackground();
+			this.blitContent();
+			this.paintBorder();
+			for (const child of this.orderedByZ()) {
+				if (!child.visible) continue;
+				try {
+					child.render();
+					this.blitChild(child);
+				} catch (err) {
+					this.paintErrorPlaceholder(child, err);
+					const handler = getErrorHandler();
+					if (handler) handler(err, child);
+					else         throw err;
+				}
 			}
+		} finally {
+			Window.renderingDepth--;
 		}
 	}
 
@@ -748,7 +885,13 @@ export class Window {
 	/** Removes a previously added child window. No-op if the child is not found. */
 	public removeChild(child: Window): void {
 		const idx = this.children.indexOf(child);
-		if (idx !== -1) this.children.splice(idx, 1);
+		if (idx !== -1) {
+			this.children.splice(idx, 1);
+			child.parent = null;
+			// The vacated rectangle has to be re-emitted from the content
+			// underneath — escalate so the root Screen repaints everything.
+			this.markFullInvalidation();
+		}
 	}
 
 	/** Replaces both internal regions with new ones of the given dimensions,
@@ -756,6 +899,12 @@ export class Window {
 	protected resizeRegions(w: number, h: number): void {
 		this.region  = new Region(w, h);
 		this.content = new Region(w, h);
+		// A new region invalidates any per-cell dirty bookkeeping from the
+		// previous size — escalate to a full-window repaint and ask the
+		// Screen to emit from scratch because the old footprint on stdout
+		// may include cells that are no longer part of this window.
+		this.dirtyRect = 'all';
+		this.markFullInvalidation();
 		this.reflowChildren();
 	}
 

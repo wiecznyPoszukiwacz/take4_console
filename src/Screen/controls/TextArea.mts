@@ -82,6 +82,7 @@ export class TextArea extends Window {
 		this.cursor.x = Math.min(this.cursor.x, this.lines[this.cursor.y].length);
 		this.selectionAnchor = null;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Returns the normalized selection range `{ start, end }` in 2-D
@@ -120,6 +121,7 @@ export class TextArea extends Window {
 		this.selectionAnchor = (a.x === c.x && a.y === c.y) ? null : a;
 		this.cursor = c;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Selects every character in the buffer. No-op when the buffer holds a
@@ -134,11 +136,14 @@ export class TextArea extends Window {
 		this.selectionAnchor = { x: 0, y: 0 };
 		this.cursor = { x: lastX, y: lastY };
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Drops any active selection without moving the cursor. */
 	public clearSelection(): void {
+		if (this.selectionAnchor === null) return;
 		this.selectionAnchor = null;
+		this.markDirty();
 	}
 
 	/** Clamps a 2-D position so both components land inside the buffer. */
@@ -182,6 +187,7 @@ export class TextArea extends Window {
 		this.cursor.x = Math.max(0, Math.min(pos.x, this.lines[this.cursor.y].length));
 		this.selectionAnchor = null;
 		this.clampScroll();
+		this.markDirty();
 	}
 
 	/** Returns a copy of the current cursor position. */
@@ -363,6 +369,10 @@ export class TextArea extends Window {
 	private finishKey(before: string): void {
 		this.clampScroll();
 		this.virtualCursor.resetPhase();
+		// Every key dispatch may have moved the cursor, changed the
+		// selection, or edited the buffer — flag the window dirty so the
+		// next Screen.render() re-emits the composed state.
+		this.markDirty();
 		if (this.getValue() !== before) this.onChange?.(this.getValue());
 	}
 

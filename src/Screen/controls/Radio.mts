@@ -31,7 +31,9 @@ export class Radio extends Window {
 
 	/** Sets the selected state. */
 	public setChecked(checked: boolean): void {
+		if (this.checked === checked) return;
 		this.checked = checked;
+		this.markDirty();
 	}
 
 	/** Returns the current selected state. */
@@ -43,7 +45,10 @@ export class Radio extends Window {
 	public handleKey(key: string): void {
 		if (this.disabled) return;
 		if (key === ' ' || key === 'space') {
-			this.checked = true;
+			if (!this.checked) {
+				this.checked = true;
+				this.markDirty();
+			}
 			this.onChange?.(true);
 		}
 	}
