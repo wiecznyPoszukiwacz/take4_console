@@ -670,6 +670,13 @@ export class WindowManager {
 			// Avoid drawing while paused — the stdin listener is detached
 			// and the terminal might be owned by a sub-process.
 			if (this.paused) return;
+			// A blink tick is a pure time-driven change: no user input
+			// modified any state, so damage tracking would otherwise skip
+			// the frame entirely and the cursor would never visually blink.
+			// Flag the focused control dirty (if any) so its render() path
+			// re-emits the TextBox / TextArea row with the new cursor
+			// phase; when nothing is focused the frame is still skipped.
+			this.getFocused()?.markDirty();
 			this.renderFrame();
 		}, this.blinkIntervalMs);
 		// Don't keep the Node event loop alive just for cursor blinks.

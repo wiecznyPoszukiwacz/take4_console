@@ -15,6 +15,8 @@ import { ListBox }      from './Screen/controls/ListBox.mjs';
 import { Tabs }         from './Screen/controls/Tabs.mjs';
 import { TextBox }      from './Screen/controls/TextBox.mjs';
 import { Window } from './Screen/Window.mjs';
+import { Pos } from './Screen/Pos.mjs';
+import { Size } from './Screen/Size.mjs';
 import type { ListBoxRowSegments, WindowProperties, StyleId } from './Screen/types.mjs';
 
 /** Custom Window subclass registered with InterfaceBuilder via
@@ -472,6 +474,39 @@ const main = async (): Promise<void> => {
 		if (text.length > 0) tbUsername.setSelection(0, Math.min(3, text.length));
 	}
 	wm.enableCursorBlink(80);
+
+	// P2-59 showcase: five independent spinners with different styles,
+	// cadences, and positions, each driven by its own `setInterval`.
+	// With damage tracking ON, every tick emits only that spinner's 1–2
+	// cells (check the 'frame' event `cellsEmitted`); with tracking OFF
+	// (Ctrl+D) each tick repaints the whole screen. Placed along the
+	// bottom edge so they don't overlap existing widgets.
+	const spinnerStyles: Array<'braille' | 'dots' | 'line' | 'circle' | 'arrow'> =
+		['braille', 'dots', 'line', 'circle', 'arrow'];
+	const spinnerCadences = [120, 180, 240, 320, 420];
+	const spinnerTimers: NodeJS.Timeout[] = [];
+	const { width: screenW, height: screenH } = screen.getSize();
+	for (let i = 0; i < spinnerStyles.length; i++) {
+		const sp = new Spinner(
+			{ pos: new Pos(screenW - 12 - i * 3, screenH - 2), size: new Size(2, 1) },
+			{ style: spinnerStyles[i], color: 75 + i * 10 },
+		);
+		screen.addChild(sp);
+		const timer = setInterval(() => {
+			sp.step();
+			screen.render();
+		}, spinnerCadences[i]!);
+		if (typeof timer === 'object' && timer !== null && 'unref' in timer
+		    && typeof timer.unref === 'function') timer.unref();
+		spinnerTimers.push(timer);
+	}
+	// Ensure the spinner timers are torn down alongside the main demo
+	// timer when the user quits (the existing onExit handler already
+	// clears `demoTimer`, so extend it with ours).
+	const originalOnExit = () => {
+		for (const t of spinnerTimers) clearInterval(t);
+	};
+	process.once('exit', originalOnExit);
 
 	wm.run();
 };
