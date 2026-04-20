@@ -8,7 +8,8 @@ Ships 15 built-in controls — buttons, text inputs, checkboxes, radios,
 listboxes, tabs, status LEDs, progress bars, line/bar/sparkline charts,
 spinners — and an extension API for adding your own. Pure ESM, TypeScript
 first, zero runtime dependencies besides a YAML parser, one `stdout.write()`
-per frame.
+per frame, with built-in damage tracking that skips the write entirely
+when nothing is dirty.
 
 > **Requirements:** Node.js ≥ 18, a terminal that supports ANSI escape
 > sequences and 256-colour / 24-bit colour. NerdFonts glyphs are supported
@@ -192,7 +193,7 @@ MIT © Jarosław Mężyk
 | `Region` | A flat `chars[]` + `styleIds[]` buffer. Every Window has two: `content` (user writes) and `region` (composited on render). |
 | `StyleRegistry` | Maps integer `StyleId` → `CellAttributes`. Identical attribute objects always get the same ID (deduplication). ID 0 = empty style. |
 | `StyleId` | An opaque integer. Never construct cell attributes directly — always call `registry.register(attrs)` and keep the returned ID. |
-| `Screen` | A `Window` sized to the terminal. Owns the root `StyleRegistry`. Serialises its `region` into a single ANSI escape string and writes it with one `process.stdout.write()`. |
+| `Screen` | A `Window` sized to the terminal. Owns the root `StyleRegistry`. Serialises its `region` into a single ANSI escape string and writes it with one `process.stdout.write()`. Damage tracking (on by default) emits only changed cells and skips the write entirely when nothing is dirty. |
 | `Pos` | Encodes position: absolute `new Pos(x, y)`, edge-relative `new Pos(-1, -1)`, percentage, or named preset (`Pos.center()`, …). |
 | `Size` | Encodes size: absolute `new Size(w, h)`, percentage, or fill shorthand (`Size.fill()`, `Size.fillWidth(h)`, …). |
 
